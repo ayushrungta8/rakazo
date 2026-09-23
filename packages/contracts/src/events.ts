@@ -99,7 +99,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     text: z.string(),
     approvalEffectId: Id.optional(),
     detail: z.string().optional(),
-    input: z.enum(["text", "secret"]).optional(),
+    input: z.enum(["text", "secret", "location"]).optional(),
     /** Why the secret is needed; drives field label on the masked card. */
     purpose: SecretAskPurpose.optional(),
     // Records what the runtime could produce under either deployment mode, so

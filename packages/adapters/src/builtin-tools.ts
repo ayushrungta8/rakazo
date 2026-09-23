@@ -324,6 +324,17 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "request_location",
+    description:
+      "Request a fresh one-time location from the user’s phone or laptop, with explicit permission, then wait. Use when current location is relevant. Never use the server IP or an old fix as current location. Respect declines; continue without location or ask for a place name instead of repeatedly requesting.",
+    inputSchema: {
+      type: "object",
+      properties: { reason: { type: "string", minLength: 1, maxLength: 240 } },
+      required: ["reason"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "ask_user",
     description:
       "Ask the user one short multiple-choice question with tappable options, then wait for their selection. Use this instead of asking them to type when two to four concise choices are enough.",

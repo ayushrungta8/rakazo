@@ -97,6 +97,7 @@ export class ScriptedAgentRuntime implements AgentRuntime {
           yield {
             type: "ask",
             text: turn.ask.text,
+            ...(turn.ask.input ? { input: turn.ask.input } : {}),
             detail: turn.ask.detail,
             actions: turn.ask.actions,
           };

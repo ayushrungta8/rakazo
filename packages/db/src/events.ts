@@ -13,6 +13,7 @@ import {
   isConversationalRun,
   isSecretAskBlock,
   messagingChannelId,
+  normalizeDeviceLocationAnswer,
   resolveAskChoice,
   sanitizeJsonValue,
 } from "@rakazo/core";
@@ -597,7 +598,11 @@ async function commitAnswerRunInput(
   if (pendingAsk?.kind !== "ask") return null;
   const approvalAsk = isApprovalAskBlock(pendingAsk);
   const secretAsk = isSecretAskBlock(pendingAsk);
-  const choiceAsk = !approvalAsk && !secretAsk && Boolean(pendingAsk.actions?.length);
+  const locationAsk = pendingAsk.input === "location";
+  const locationAnswer = locationAsk ? normalizeDeviceLocationAnswer(input.answer) : null;
+  if (locationAsk && (run.userId !== input.answeredByUserId || !locationAnswer)) return null;
+  const choiceAsk =
+    !approvalAsk && !secretAsk && !locationAsk && Boolean(pendingAsk.actions?.length);
   const selectedChoice = choiceAsk ? resolveAskChoice(input.answer, pendingAsk.actions) : undefined;
   if (secretAsk && !runSecretWriter) return null;
   if (secretAsk && pendingAsk.credential && run.userId !== input.answeredByUserId) return null;
@@ -637,12 +642,12 @@ async function commitAnswerRunInput(
     },
     data: {
       status: "queued",
-      ...(choiceAsk ? { checkpoint: null } : {}),
+      ...(choiceAsk || locationAsk ? { checkpoint: null } : {}),
     },
   });
   if (queued.count !== 1) return null;
 
-  const recordedAnswer = secretAsk ? "" : (selectedChoice?.id ?? input.answer);
+  const recordedAnswer = secretAsk ? "" : (locationAnswer ?? selectedChoice?.id ?? input.answer);
 
   if (approvalAsk) {
     const allowed = input.answer === "allow" || input.answer === "always";
@@ -702,7 +707,7 @@ async function commitAnswerRunInput(
       data: {
         prompt: selectedChoice
           ? `Selected choice ${selectedChoice.id}: ${resumeLabel}`
-          : input.answer,
+          : (locationAnswer ?? input.answer),
       },
     });
     if (task.count !== 1) throw new Error("Run task was not available to answer");
@@ -759,7 +764,12 @@ export async function answerWaitingRunWithTextInTransaction(
   if (!answer) return null;
   const found = await findPendingAsk(tx, input);
   if (!found) return null;
-  if (isApprovalAskBlock(found.pendingAsk) || isSecretAskBlock(found.pendingAsk)) return null;
+  if (
+    isApprovalAskBlock(found.pendingAsk) ||
+    isSecretAskBlock(found.pendingAsk) ||
+    found.pendingAsk.input === "location"
+  )
+    return null;
   return commitAnswerRunInput(tx, { ...input, messageId: found.messageId, answer });
 }
 

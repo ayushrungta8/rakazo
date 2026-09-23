@@ -806,6 +806,9 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
       if (tool.name === "request_takeover") {
         return { reason: String(raw.reason ?? "I need you on the screen.") };
       }
+      if (tool.name === "request_location") {
+        return { reason: raw.reason };
+      }
       if (tool.name === "ask_user") {
         const options = Array.isArray(raw.options) ? raw.options.map(String) : raw.options;
         return {
@@ -916,6 +919,21 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
             });
             return {
               content: [{ type: "text", text: "Takeover requested." }],
+              details: args,
+              terminate: true,
+            };
+          }
+          if (tool.name === "request_location") {
+            const reason = args.reason;
+            if (typeof reason !== "string" || !reason.trim() || reason.length > 240) {
+              throw new Error("request_location requires a reason of 1 to 240 characters");
+            }
+            host.pausePending = true;
+            host.queue.push({ type: "ask", input: "location", text: reason.trim() });
+            return {
+              content: [
+                { type: "text", text: "Waiting for explicit one-time device location sharing." },
+              ],
               details: args,
               terminate: true,
             };
@@ -1256,6 +1274,9 @@ function builtinParameters(tool: ConnectorTool) {
   }
   if (tool.name === "request_takeover") {
     return Type.Object({ reason: Type.String() });
+  }
+  if (tool.name === "request_location") {
+    return Type.Object({ reason: Type.String({ minLength: 1, maxLength: 240 }) });
   }
   if (tool.name === "ask_user") {
     return Type.Object({

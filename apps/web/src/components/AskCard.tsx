@@ -5,6 +5,7 @@ import type { ThreadMessage } from "@rakazo/contracts";
 import { isApprovalAskBlock, isSecretAskBlock, selectedAskActionLabel } from "@rakazo/core";
 import { Button, Input } from "@rakazo/ui-web";
 import { useState } from "react";
+import { LocationAskActions } from "./LocationAskActions";
 
 export type AskBlock = Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
 
@@ -93,7 +94,7 @@ export function AskCard({
   return (
     <div
       data-testid={secretInput ? "secret-ask-card" : undefined}
-      className="max-w-[74%] rounded-2xl border border-border bg-card px-5 py-4"
+      className={`${block.input === "location" ? "max-w-[90%] sm:max-w-[74%]" : "max-w-[74%]"} rounded-2xl border border-border bg-card px-5 py-4`}
     >
       <div className="text-[15.5px] leading-[1.5] text-foreground">
         <ChatMarkdown>{block.text}</ChatMarkdown>
@@ -122,6 +123,8 @@ export function AskCard({
         <div className="mt-3.5 text-[13.5px] font-medium text-muted-foreground">
           <Trans>No longer active</Trans>
         </div>
+      ) : block.input === "location" ? (
+        <LocationAskActions onAnswer={onAnswer} />
       ) : askActions?.length ? (
         <div className="mt-3.5 space-y-1.5">
           {askActions.map((action) => (

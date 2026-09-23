@@ -72,6 +72,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppConnectCard } from "../components/AppConnectCard";
 import { AskActions } from "../components/AskActions";
 import { BotAvatar } from "../components/bot-avatar";
+import { LocationAskActions } from "../components/LocationAskActions";
 import {
   MarkdownArtifactPreview,
   type MarkdownArtifactPreviewTarget,
@@ -99,6 +100,7 @@ import {
 } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { type MobileArtifactTarget, openMobileArtifact } from "../lib/artifact-open";
+import { mobileAskPresentation } from "../lib/ask-presentation";
 import { nextAutoSpeakAction } from "../lib/auto-speak";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
@@ -2382,7 +2384,7 @@ const MessageBubble = memo(function MessageBubble({
   );
   const ask = message.blocks.find(
     (block): block is Extract<MessageBlock, { kind: "ask" }> =>
-      block.kind === "ask" && !isApprovalAskBlock(block) && !block.actions?.length,
+      mobileAskPresentation(block) === "text",
   );
   if (ask) {
     return (
@@ -2667,9 +2669,10 @@ const MessageBubble = memo(function MessageBubble({
     );
   }
   const askBlock = message.blocks.find(
-    (block) => block.kind === "ask" && Boolean(block.actions?.length),
+    (block) =>
+      mobileAskPresentation(block) === "location" || mobileAskPresentation(block) === "actions",
   );
-  if (askBlock?.kind === "ask" && askBlock.actions?.length) {
+  if (askBlock?.kind === "ask" && (askBlock.input === "location" || askBlock.actions?.length)) {
     return (
       <View style={{ gap: 8, width: "100%" }}>
         <View
@@ -2721,7 +2724,9 @@ const MessageBubble = memo(function MessageBubble({
                 isApprovalAskBlock(askBlock),
               )}
             </Text>
-          ) : canAnswer && onAnswer ? (
+          ) : canAnswer && askBlock.input === "location" ? (
+            <LocationAskActions onAnswer={(answer) => onAnswer(message, answer)} />
+          ) : canAnswer && askBlock.actions ? (
             <AskActions
               actions={askBlock.actions}
               accessibilityActions={actionProps.accessibilityActions}

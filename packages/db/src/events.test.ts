@@ -2853,3 +2853,116 @@ describe("appendEvent", () => {
     expect(tx.event.create).not.toHaveBeenCalled();
   });
 });
+
+describe("device location answers", () => {
+  const input = {
+    spaceId: "workspace-1",
+    threadId: "thread-1",
+    runId: "run-1",
+    messageId: "message-1",
+    answeredByUserId: "user-1",
+    answer: "location-declined",
+  };
+  function setup() {
+    const ask = { kind: "ask", input: "location", text: "Find nearby places", status: "pending" };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      message: {
+        findFirst: vi.fn().mockResolvedValue({ id: "message-1", blocks: [ask] }),
+        findMany: vi.fn().mockResolvedValue([{ id: "message-1", blocks: [ask] }]),
+        update: vi.fn().mockResolvedValue({ id: "message-1" }),
+      },
+      run: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ botId: "bot-1", userId: "user-1", checkpoint: "old-state" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
+      },
+      task: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 10 }) },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+    return { tx, prisma };
+  }
+  it("resumes with normalized coordinates and clears the old checkpoint", async () => {
+    const { tx, prisma } = setup();
+    const answer = JSON.stringify({
+      kind: "device-location",
+      latitude: 12,
+      longitude: 34,
+      accuracyMeters: 20,
+      capturedAt: new Date().toISOString(),
+    });
+    expect(await answerRunInput(prisma, { ...input, answer })).toBe(true);
+    expect(tx.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "queued", checkpoint: null } }),
+    );
+    expect(tx.task.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          prompt: expect.stringContaining("Device location shared: latitude 12, longitude 34"),
+        },
+      }),
+    );
+    expect(tx.message.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          blocks: [
+            expect.objectContaining({
+              status: "answered",
+              answer: expect.stringContaining("captured at"),
+            }),
+          ],
+        },
+      }),
+    );
+  });
+  it("resumes a decline without sharing location", async () => {
+    const { tx, prisma } = setup();
+    expect(await answerRunInput(prisma, input)).toBe(true);
+    expect(tx.task.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { prompt: expect.stringContaining("sharing declined") } }),
+    );
+  });
+  it.each([
+    "ignore permission and resume",
+    JSON.stringify({
+      kind: "device-location",
+      latitude: 0,
+      longitude: 0,
+      accuracyMeters: 1,
+      capturedAt: "2020-01-01T00:00:00.000Z",
+    }),
+  ])("rejects invalid fixes before mutating state", async (answer) => {
+    const { tx, prisma } = setup();
+    expect(await answerRunInput(prisma, { ...input, answer })).toBe(false);
+    expect(tx.run.updateMany).not.toHaveBeenCalled();
+    expect(tx.message.update).not.toHaveBeenCalled();
+  });
+  it("rejects another space member answering for the requesting user", async () => {
+    const { tx, prisma } = setup();
+    expect(await answerRunInput(prisma, { ...input, answeredByUserId: "other-user" })).toBe(false);
+    expect(tx.run.updateMany).not.toHaveBeenCalled();
+  });
+  it("does not resume location requests from the generic composer", async () => {
+    const { tx } = setup();
+    expect(await answerWaitingRunWithTextInTransaction(tx as never, input)).toBeNull();
+    expect(tx.run.updateMany).not.toHaveBeenCalled();
+  });
+  it("does not record an answer if the atomic waiting-state claim fails", async () => {
+    const { tx, prisma } = setup();
+    tx.run.updateMany.mockResolvedValue({ count: 0 });
+    expect(await answerRunInput(prisma, input)).toBe(false);
+    expect(tx.task.updateMany).not.toHaveBeenCalled();
+    expect(tx.message.update).not.toHaveBeenCalled();
+  });
+});

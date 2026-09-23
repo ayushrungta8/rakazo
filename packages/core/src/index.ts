@@ -17,6 +17,7 @@ export * from "./composer-mentions.js";
 export * from "./composer-slash.js";
 export * from "./computer-updates.js";
 export * from "./cron.js";
+export * from "./device-location.js";
 export * from "./events.js";
 export * from "./featured-connectors.js";
 export * from "./group-mentions.js";
