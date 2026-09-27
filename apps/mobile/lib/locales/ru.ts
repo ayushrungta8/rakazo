@@ -1006,4 +1006,8 @@ export const RU_MESSAGES: Record<string, string> = {
     "Боты ищут только воспоминания, сохранённые для этого бота.",
   "Bots can search shared workspace memories as well as their own.":
     "Боты могут искать общие воспоминания рабочего пространства, а также свои собственные.",
+  "Device voice did not start. Check Android text-to-speech settings and try again.":
+    "Голос устройства не запустился. Проверьте настройки синтеза речи Android и попробуйте снова.",
+  "Device voice could not play. Check Android text-to-speech settings and try again.":
+    "Не удалось воспроизвести голос устройства. Проверьте настройки синтеза речи Android и попробуйте снова.",
 };

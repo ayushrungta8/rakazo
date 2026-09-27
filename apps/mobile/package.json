@@ -5,7 +5,12 @@
   "main": "expo-router/entry",
   "expo": {
     "autolinking": {
-      "nativeModulesDir": "./modules"
+      "nativeModulesDir": "./modules",
+      "android": {
+        "buildFromSource": [
+          "expo-speech"
+        ]
+      }
     }
   },
   "scripts": {

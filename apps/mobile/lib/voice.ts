@@ -98,11 +98,39 @@ async function loadExpoSpeech(): Promise<typeof ExpoSpeech> {
 
 function speakOneUtterance(Speech: typeof ExpoSpeech, text: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve();
+    };
+    // A failed Android engine can return without emitting any speech callback.
+    // Only the start watchdog is short; long replies can keep speaking normally.
+    timer = setTimeout(() => {
+      finish(
+        new Error(
+          t("Device voice did not start. Check Android text-to-speech settings and try again."),
+        ),
+      );
+      void Speech.stop().catch(() => undefined);
+    }, 10_000);
     Speech.speak(text, {
-      onDone: () => resolve(),
-      // Speech.stop() reports onStopped, not onDone.
-      onStopped: () => resolve(),
-      onError: (error) => reject(error instanceof Error ? error : new Error(String(error))),
+      onStart: () => clearTimeout(timer),
+      onDone: () => finish(),
+      onStopped: () => finish(),
+      onError: (error) =>
+        finish(
+          error instanceof Error && error.message
+            ? error
+            : new Error(
+                t(
+                  "Device voice could not play. Check Android text-to-speech settings and try again.",
+                ),
+              ),
+        ),
     });
   });
 }

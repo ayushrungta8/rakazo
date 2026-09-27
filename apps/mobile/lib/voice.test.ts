@@ -228,6 +228,41 @@ describe("on-device speech", () => {
     await expect(speakWithDeviceVoice("Hello")).rejects.toThrow("synth failed");
   });
 
+  it("times out a silent engine failure without using hosted voice", async () => {
+    vi.useFakeTimers();
+    vi.mocked(Speech.stop).mockResolvedValue(undefined);
+    vi.mocked(Speech.speak).mockImplementation(() => undefined);
+    try {
+      const result = speakWithDeviceVoice("Hello");
+      const failure = expect(result).rejects.toThrow("Device voice did not start");
+      await vi.advanceTimersByTimeAsync(10_000);
+      await failure;
+      expect(Speech.stop).toHaveBeenCalledTimes(2);
+      expect(rpc).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the start deadline once the engine begins a long utterance", async () => {
+    vi.useFakeTimers();
+    let done: (() => void) | undefined;
+    vi.mocked(Speech.speak).mockImplementation((_text, options) => {
+      options?.onStart?.();
+      done = options?.onDone;
+    });
+    try {
+      const result = speakWithDeviceVoice("A long spoken reply");
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(done).toBeDefined();
+      done!();
+      await expect(result).resolves.toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("rejects when expo-speech is not usable instead of calling hosted voice", async () => {
     const originalSpeak = Speech.speak;
     Object.defineProperty(Speech, "speak", { configurable: true, value: undefined });

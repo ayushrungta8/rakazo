@@ -972,4 +972,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Bots search only memories saved for that bot.": "Bot 只搜索为自己保存的记忆。",
   "Bots can search shared workspace memories as well as their own.":
     "Bot 可以搜索工作区共享的记忆以及自己的记忆。",
+  "Device voice did not start. Check Android text-to-speech settings and try again.":
+    "设备语音未启动。请检查 Android 的文字转语音设置，然后重试。",
+  "Device voice could not play. Check Android text-to-speech settings and try again.":
+    "无法播放设备语音。请检查 Android 的文字转语音设置，然后重试。",
 };

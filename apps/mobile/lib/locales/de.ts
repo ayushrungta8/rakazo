@@ -1010,4 +1010,8 @@ export const DE_MESSAGES: Record<string, string> = {
     "Bots durchsuchen nur Erinnerungen, die für den jeweiligen Bot gespeichert wurden.",
   "Bots can search shared workspace memories as well as their own.":
     "Bots können gemeinsame Erinnerungen des Arbeitsbereichs sowie ihre eigenen durchsuchen.",
+  "Device voice did not start. Check Android text-to-speech settings and try again.":
+    "Die Gerätestimme wurde nicht gestartet. Prüfe die Android-Einstellungen für Text-zu-Sprache und versuche es erneut.",
+  "Device voice could not play. Check Android text-to-speech settings and try again.":
+    "Die Gerätestimme konnte nicht wiedergegeben werden. Prüfe die Android-Einstellungen für Text-zu-Sprache und versuche es erneut.",
 };

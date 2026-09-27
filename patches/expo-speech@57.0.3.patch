@@ -1,0 +1,33 @@
+diff --git a/android/src/main/java/expo/modules/speech/SpeechModule.kt b/android/src/main/java/expo/modules/speech/SpeechModule.kt
+index ed8d2a72383239c7b3d331b0db0b40451f6223e5..a1e1e81027b77e0eabd697ca661aeed2bb248681 100644
+--- a/android/src/main/java/expo/modules/speech/SpeechModule.kt
++++ b/android/src/main/java/expo/modules/speech/SpeechModule.kt
+@@ -37,8 +37,9 @@ class SpeechModule : Module() {
+       TextToSpeech.getMaxSpeechInputLength()
+     }
+ 
+-    OnActivityDestroys {
+-      textToSpeech.shutdown()
++    // Activity recreation must not shut down the engine owned by this module.
++    OnDestroy {
++      _textToSpeech?.shutdown()
+     }
+ 
+     AsyncFunction<Boolean>("isSpeaking") {
+@@ -135,12 +136,15 @@ class SpeechModule : Module() {
+       }
+     }
+ 
+-    textToSpeech.speak(
++    val result = textToSpeech.speak(
+       text,
+       TextToSpeech.QUEUE_ADD,
+       params,
+       id
+     )
++    if (result == TextToSpeech.ERROR) {
++      sendEvent(speakingErrorEvent, idToMap(id))
++    }
+   }
+ 
+   // TextToSpeech object related code
