@@ -142,7 +142,7 @@ export default function Settings() {
               t("Workspace"),
               "layers-outline",
               () => category("workspace"),
-              t("Chats, routines, memory and files"),
+              t("Chats, routines, saved knowledge and files"),
               true,
             )}
             {divider}
@@ -175,11 +175,23 @@ export default function Settings() {
                 params: { area: "workspace", tool: "routines" },
               }),
             )}
-            {row(t("Memory"), "albums-outline", () => router.push("/memory"))}
-            {row(t("Knowledge & skills"), "book-outline", () => router.push("/knowledge"))}
-            {row(t("Files"), "document-outline", () => router.push("/files"))}
-            {row(t("Action confirmations"), "shield-checkmark-outline", () =>
-              router.push("/approvals"),
+            {row(
+              t("Saved knowledge & skills"),
+              "book-outline",
+              () => router.push("/knowledge"),
+              t("Saved documents and bot instructions"),
+            )}
+            {row(
+              t("Files"),
+              "document-outline",
+              () => router.push("/files"),
+              t("Browse files created or uploaded in chats"),
+            )}
+            {row(
+              t("Action confirmations"),
+              "shield-checkmark-outline",
+              () => router.push("/approvals"),
+              t("Choose which bot actions need your approval"),
             )}
             {divider}
             {row(t("Archived bots"), "archive-outline", () => accountPage("archived"))}
@@ -217,13 +229,37 @@ export default function Settings() {
               me?.defaultModel ?? undefined,
             )}
             {row(t("Voice"), "mic-outline", () => router.push("/voice"))}
+            {row(
+              t("Memory service"),
+              "albums-outline",
+              () => router.push("/memory"),
+              t("Connect a service for remembering across chats"),
+            )}
             {divider}
-            {row(t("Integrations"), "link-outline", () => router.push("/integrations"))}
-            {row(t("Messaging"), "paper-plane-outline", () => router.push("/messaging"))}
-            {row(t("MCP servers"), "server-outline", () => router.push("/mcp-servers"))}
+            {row(
+              t("Integrations"),
+              "link-outline",
+              () => router.push("/integrations"),
+              t("Connect external apps and services"),
+            )}
+            {row(
+              t("Messaging"),
+              "paper-plane-outline",
+              () => router.push("/messaging"),
+              t("Connect bots to messaging channels"),
+            )}
+            {row(
+              t("Tool servers (MCP)"),
+              "server-outline",
+              () => router.push("/mcp-servers"),
+              t("Give bots tools from connected servers"),
+            )}
             {divider}
-            {row(t("AI data sharing"), "lock-closed-outline", () =>
-              router.push("/ai-data-sharing"),
+            {row(
+              t("AI data sharing"),
+              "lock-closed-outline",
+              () => router.push("/ai-data-sharing"),
+              t("Control what connected AI services can receive"),
             )}
             {me?.isDeploymentOwner
               ? row(t("Server integrations"), "construct-outline", () =>

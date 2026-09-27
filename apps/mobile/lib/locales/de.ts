@@ -948,4 +948,66 @@ export const DE_MESSAGES: Record<string, string> = {
   open: "Offen",
   parked: "Zurückgestellt",
   done: "Erledigt",
+  // Memory service and settings descriptions
+  "Across the workspace": "Im gesamten Arbeitsbereich",
+  "An optional service that lets bots save and recall information across conversations.":
+    "Ein optionaler Dienst, mit dem Bots Informationen über mehrere Unterhaltungen hinweg speichern und abrufen können.",
+  "Bots can recall shared workspace memories as well as their own. ":
+    "Bots können gemeinsame Erinnerungen des Arbeitsbereichs sowie ihre eigenen abrufen.",
+  "Bots will stop using this service. Memories stored in the service will not be deleted.":
+    "Bots werden diesen Dienst nicht mehr verwenden. Darin gespeicherte Erinnerungen werden nicht gelöscht.",
+  "Browse files created or uploaded in chats":
+    "In Chats erstellte oder hochgeladene Dateien durchsuchen",
+  "Cancel setup": "Einrichtung abbrechen",
+  "Chats, routines, saved knowledge and files": "Chats, Routinen, gespeichertes Wissen und Dateien",
+  "Choose a memory service": "Speicherdienst auswählen",
+  "Choose which bot actions need your approval":
+    "Festlegen, welche Bot-Aktionen deine Genehmigung benötigen",
+  "Connect a memory service": "Speicherdienst verbinden",
+  "Connect a service for remembering across chats":
+    "Einen Dienst für Erinnerungen über mehrere Chats hinweg verbinden",
+  "Connect bots to messaging channels": "Bots mit Nachrichtenkanälen verbinden",
+  "Connect external apps and services": "Externe Apps und Dienste verbinden",
+  "Connect memory service": "Speicherdienst verbinden",
+  "Connected to {service}": "Mit {service} verbunden",
+  "Connecting…": "Verbindung wird hergestellt…",
+  "Control what connected AI services can receive":
+    "Festlegen, was verbundene KI-Dienste erhalten dürfen",
+  "Default access to memories": "Standardzugriff auf Erinnerungen",
+  "Disconnect memory service": "Speicherdienst trennen",
+  "Disconnect memory service?": "Speicherdienst trennen?",
+  "Each bot recalls its own memories. Other bots cannot recall them through this service.":
+    "Jeder Bot ruft seine eigenen Erinnerungen ab. Andere Bots können über diesen Dienst nicht darauf zugreifen.",
+  "Each bot separately": "Für jeden Bot einzeln",
+  "Enter the API key from your Supermemory account. Connecting lets bots send information to this service.":
+    "Gib den API-Schlüssel aus deinem Supermemory-Konto ein. Nach dem Verbinden können Bots Informationen an diesen Dienst senden.",
+  "Enter the connection details from your Serenity administrator.":
+    "Gib die Verbindungsdaten deines Serenity-Administrators ein.",
+  "Enter the server address and API key from your Supermemory administrator.":
+    "Gib die Serveradresse und den API-Schlüssel deines Supermemory-Administrators ein.",
+  "Give bots tools from connected servers": "Bots Werkzeuge von verbundenen Servern bereitstellen",
+  "Hosted service": "Gehosteter Dienst",
+  "Individual bots can override this default in their settings.":
+    "Einzelne Bots können diesen Standard in ihren Einstellungen ändern.",
+  "Let bots save new memories": "Bots neue Erinnerungen speichern lassen",
+  "Memory collection name (optional)": "Name der Erinnerungssammlung (optional)",
+  "Memory service": "Speicherdienst",
+  "No memory service connected": "Kein Speicherdienst verbunden",
+  "Saved documents and bot instructions": "Gespeicherte Dokumente und Bot-Anweisungen",
+  "Saved knowledge & skills": "Gespeichertes Wissen und Fähigkeiten",
+  "Self-hosted server": "Selbst gehosteter Server",
+  "Serenity access token": "Serenity-Zugriffstoken",
+  "Serenity server address": "Serenity-Serveradresse",
+  "Supermemory API key": "Supermemory-API-Schlüssel",
+  "Supermemory server address": "Supermemory-Serveradresse",
+  "Tool servers (MCP)": "Werkzeugserver (MCP)",
+  "View and edit saved documents and bot instructions. Managed separately from the memory service.":
+    "Gespeicherte Dokumente und Bot-Anweisungen ansehen und bearbeiten. Sie werden getrennt vom Speicherdienst verwaltet.",
+  "When off, bots can search existing memories but cannot save new ones to Serenity.":
+    "Wenn ausgeschaltet, können Bots vorhandene Erinnerungen suchen, aber keine neuen in Serenity speichern.",
+  "Where is Supermemory running?": "Wo läuft Supermemory?",
+  "Bots search only memories saved for that bot.":
+    "Bots durchsuchen nur Erinnerungen, die für den jeweiligen Bot gespeichert wurden.",
+  "Bots can search shared workspace memories as well as their own.":
+    "Bots können gemeinsame Erinnerungen des Arbeitsbereichs sowie ihre eigenen durchsuchen.",
 };

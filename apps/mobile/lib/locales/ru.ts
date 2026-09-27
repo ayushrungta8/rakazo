@@ -945,4 +945,65 @@ export const RU_MESSAGES: Record<string, string> = {
   open: "Открыто",
   parked: "Отложено",
   done: "Готово",
+  // Memory service and settings descriptions
+  "Across the workspace": "Для всего рабочего пространства",
+  "An optional service that lets bots save and recall information across conversations.":
+    "Необязательный сервис, позволяющий ботам сохранять и вспоминать информацию из разных разговоров.",
+  "Bots can recall shared workspace memories as well as their own. ":
+    "Боты могут вспоминать общие воспоминания рабочего пространства, а также свои собственные.",
+  "Bots will stop using this service. Memories stored in the service will not be deleted.":
+    "Боты перестанут использовать этот сервис. Сохранённые в нём воспоминания не будут удалены.",
+  "Browse files created or uploaded in chats": "Просмотр файлов, созданных или загруженных в чатах",
+  "Cancel setup": "Отменить настройку",
+  "Chats, routines, saved knowledge and files":
+    "Чаты, регулярные задачи, сохранённые знания и файлы",
+  "Choose a memory service": "Выберите сервис памяти",
+  "Choose which bot actions need your approval":
+    "Выберите действия ботов, требующие вашего одобрения",
+  "Connect a memory service": "Подключить сервис памяти",
+  "Connect a service for remembering across chats": "Подключите сервис для памяти между чатами",
+  "Connect bots to messaging channels": "Подключите ботов к каналам обмена сообщениями",
+  "Connect external apps and services": "Подключите внешние приложения и сервисы",
+  "Connect memory service": "Подключить сервис памяти",
+  "Connected to {service}": "Подключено к {service}",
+  "Connecting…": "Подключение…",
+  "Control what connected AI services can receive":
+    "Управляйте тем, что могут получать подключённые ИИ-сервисы",
+  "Default access to memories": "Доступ к памяти по умолчанию",
+  "Disconnect memory service": "Отключить сервис памяти",
+  "Disconnect memory service?": "Отключить сервис памяти?",
+  "Each bot recalls its own memories. Other bots cannot recall them through this service.":
+    "Каждый бот вспоминает только свои воспоминания. Другие боты не могут получить их через этот сервис.",
+  "Each bot separately": "Для каждого бота отдельно",
+  "Enter the API key from your Supermemory account. Connecting lets bots send information to this service.":
+    "Введите API-ключ из аккаунта Supermemory. После подключения боты смогут отправлять информацию этому сервису.",
+  "Enter the connection details from your Serenity administrator.":
+    "Введите данные подключения, полученные от администратора Serenity.",
+  "Enter the server address and API key from your Supermemory administrator.":
+    "Введите адрес сервера и API-ключ, полученные от администратора Supermemory.",
+  "Give bots tools from connected servers": "Предоставьте ботам инструменты подключённых серверов",
+  "Hosted service": "Облачный сервис",
+  "Individual bots can override this default in their settings.":
+    "Отдельные боты могут изменить это значение по умолчанию в своих настройках.",
+  "Let bots save new memories": "Разрешить ботам сохранять новые воспоминания",
+  "Memory collection name (optional)": "Название коллекции памяти (необязательно)",
+  "Memory service": "Сервис памяти",
+  "No memory service connected": "Сервис памяти не подключён",
+  "Saved documents and bot instructions": "Сохранённые документы и инструкции ботов",
+  "Saved knowledge & skills": "Сохранённые знания и навыки",
+  "Self-hosted server": "Собственный сервер",
+  "Serenity access token": "Токен доступа Serenity",
+  "Serenity server address": "Адрес сервера Serenity",
+  "Supermemory API key": "API-ключ Supermemory",
+  "Supermemory server address": "Адрес сервера Supermemory",
+  "Tool servers (MCP)": "Серверы инструментов (MCP)",
+  "View and edit saved documents and bot instructions. Managed separately from the memory service.":
+    "Просматривайте и редактируйте сохранённые документы и инструкции ботов. Они управляются отдельно от сервиса памяти.",
+  "When off, bots can search existing memories but cannot save new ones to Serenity.":
+    "Если выключено, боты могут искать существующие воспоминания, но не сохранять новые в Serenity.",
+  "Where is Supermemory running?": "Где запущен Supermemory?",
+  "Bots search only memories saved for that bot.":
+    "Боты ищут только воспоминания, сохранённые для этого бота.",
+  "Bots can search shared workspace memories as well as their own.":
+    "Боты могут искать общие воспоминания рабочего пространства, а также свои собственные.",
 };

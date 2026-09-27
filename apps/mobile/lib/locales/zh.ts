@@ -915,4 +915,61 @@ export const ZH_MESSAGES: Record<string, string> = {
   open: "待办",
   parked: "暂存",
   done: "已完成",
+  // Memory service and settings descriptions
+  "Across the workspace": "整个工作区",
+  "An optional service that lets bots save and recall information across conversations.":
+    "可选服务，让 Bot 在不同对话间保存和回忆信息。",
+  "Bots can recall shared workspace memories as well as their own. ":
+    "Bot 可以回忆工作区共享的记忆以及自己的记忆。",
+  "Bots will stop using this service. Memories stored in the service will not be deleted.":
+    "Bot 将停止使用此服务。服务中保存的记忆不会被删除。",
+  "Browse files created or uploaded in chats": "浏览聊天中创建或上传的文件",
+  "Cancel setup": "取消设置",
+  "Chats, routines, saved knowledge and files": "聊天、例行任务、已保存知识和文件",
+  "Choose a memory service": "选择记忆服务",
+  "Choose which bot actions need your approval": "选择哪些 Bot 操作需要你批准",
+  "Connect a memory service": "连接记忆服务",
+  "Connect a service for remembering across chats": "连接服务以跨聊天保存记忆",
+  "Connect bots to messaging channels": "将 Bot 连接到消息渠道",
+  "Connect external apps and services": "连接外部应用和服务",
+  "Connect memory service": "连接记忆服务",
+  "Connected to {service}": "已连接到 {service}",
+  "Connecting…": "正在连接…",
+  "Control what connected AI services can receive": "控制已连接的 AI 服务可以接收哪些信息",
+  "Default access to memories": "默认记忆访问权限",
+  "Disconnect memory service": "断开记忆服务",
+  "Disconnect memory service?": "断开记忆服务？",
+  "Each bot recalls its own memories. Other bots cannot recall them through this service.":
+    "每个 Bot 回忆自己的记忆。其他 Bot 无法通过此服务回忆这些记忆。",
+  "Each bot separately": "每个 Bot 独立",
+  "Enter the API key from your Supermemory account. Connecting lets bots send information to this service.":
+    "输入 Supermemory 账户中的 API 密钥。连接后，Bot 可以向此服务发送信息。",
+  "Enter the connection details from your Serenity administrator.":
+    "输入 Serenity 管理员提供的连接信息。",
+  "Enter the server address and API key from your Supermemory administrator.":
+    "输入 Supermemory 管理员提供的服务器地址和 API 密钥。",
+  "Give bots tools from connected servers": "让 Bot 使用已连接服务器的工具",
+  "Hosted service": "托管服务",
+  "Individual bots can override this default in their settings.":
+    "每个 Bot 可以在自己的设置中更改此默认值。",
+  "Let bots save new memories": "允许 Bot 保存新记忆",
+  "Memory collection name (optional)": "记忆集合名称（可选）",
+  "Memory service": "记忆服务",
+  "No memory service connected": "未连接记忆服务",
+  "Saved documents and bot instructions": "已保存的文档和 Bot 指令",
+  "Saved knowledge & skills": "已保存的知识与技能",
+  "Self-hosted server": "自行托管的服务器",
+  "Serenity access token": "Serenity 访问令牌",
+  "Serenity server address": "Serenity 服务器地址",
+  "Supermemory API key": "Supermemory API 密钥",
+  "Supermemory server address": "Supermemory 服务器地址",
+  "Tool servers (MCP)": "工具服务器（MCP）",
+  "View and edit saved documents and bot instructions. Managed separately from the memory service.":
+    "查看和编辑已保存的文档和 Bot 指令。这些内容与记忆服务分开管理。",
+  "When off, bots can search existing memories but cannot save new ones to Serenity.":
+    "关闭时，Bot 可以搜索已有记忆，但无法向 Serenity 保存新记忆。",
+  "Where is Supermemory running?": "Supermemory 在哪里运行？",
+  "Bots search only memories saved for that bot.": "Bot 只搜索为自己保存的记忆。",
+  "Bots can search shared workspace memories as well as their own.":
+    "Bot 可以搜索工作区共享的记忆以及自己的记忆。",
 };

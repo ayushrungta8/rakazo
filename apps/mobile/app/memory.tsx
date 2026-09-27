@@ -1,6 +1,7 @@
 import type { SpaceMemoryConfig } from "@rakazo/contracts";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
+import { Alert, Text, View } from "react-native";
 import {
   SettingsButton,
   SettingsChoices,
@@ -13,11 +14,14 @@ import {
 } from "../components/settings-controls";
 import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import { useMobileTokens } from "../lib/native";
 
 export default function Memory() {
   const router = useRouter();
   const { t } = useI18n();
   const action = useSettingsAction();
+  const c = useMobileTokens();
+  const [connecting, setConnecting] = useState(false);
   const resource = useSettingsResource(
     useCallback(() => rpc<SpaceMemoryConfig | null>("memory/providerConfig"), []),
   );
@@ -39,41 +43,16 @@ export default function Memory() {
       setWrite(config.settings.allowWrites === "true");
     }
   }, [resource.data]);
-  return (
-    <SettingsPage
-      title={t("Memory")}
-      loading={resource.loading}
-      error={action.error ?? resource.error}
-      retry={() => void resource.reload()}
-    >
-      <SettingsButton
-        label={t("Memory documents & skills")}
-        onPress={() => router.push("/knowledge")}
-      />
-      {resource.data ? (
-        <>
-          <SettingsText>{`${resource.data.provider} · ${resource.data.defaultMemoryScope}`}</SettingsText>
-          <SettingsButton
-            label={t("Disconnect memory provider")}
-            disabled={action.busy}
-            onPress={() =>
-              void action.run(async () => {
-                await rpc("memory/disconnectProvider");
-                setKey("");
-                await resource.reload();
-              })
-            }
-          />
-        </>
-      ) : null}
+  const accessControls = (
+    <>
       <SettingsChoices
-        label={t("Default memory scope")}
+        label={t("Default access to memories")}
         value={scope}
         choices={[
-          { value: "isolated", label: t("Isolated") },
-          { value: "shared", label: t("Shared") },
+          { value: "isolated", label: t("Each bot separately") },
+          { value: "shared", label: t("Across the workspace") },
         ]}
-        disabled={action.busy}
+        disabled={action.busy || resource.loading}
         onChange={(next) => {
           if (!resource.data) setScope(next);
           else
@@ -84,88 +63,216 @@ export default function Memory() {
             });
         }}
       />
-      {!resource.data ? (
+      <SettingsText>
+        {scope === "isolated"
+          ? t("Bots search only memories saved for that bot.")
+          : t("Bots can search shared workspace memories as well as their own.")}
+      </SettingsText>
+      {resource.data ? (
+        <SettingsText>
+          {t("Individual bots can override this default in their settings.")}
+        </SettingsText>
+      ) : null}
+    </>
+  );
+  return (
+    <SettingsPage
+      title={t("Memory service")}
+      loading={resource.loading}
+      error={action.error ?? resource.error}
+      retry={() => void resource.reload()}
+    >
+      {!resource.loading && !resource.error ? (
+        <View style={{ gap: 8 }}>
+          <Text
+            accessibilityRole="header"
+            style={{ color: c.foreground, fontSize: 22, fontWeight: "600" }}
+          >
+            {resource.data
+              ? t("Connected to {service}", {
+                  service: resource.data.provider === "serenity" ? "Serenity" : "Supermemory",
+                })
+              : t("No memory service connected")}
+          </Text>
+          <SettingsText>
+            {t(
+              "An optional service that lets bots save and recall information across conversations.",
+            )}
+          </SettingsText>
+        </View>
+      ) : null}
+      {!resource.loading && !resource.error && (resource.data || connecting) ? (
         <>
-          <SettingsChoices
-            label={t("Provider")}
-            value={provider}
-            choices={[
-              { value: "supermemory", label: "Supermemory" },
-              { value: "serenity", label: "Serenity" },
-            ]}
-            onChange={(next) => {
-              setProvider(next);
-              setEndpoint("");
-              setKey("");
-            }}
-            disabled={action.busy}
-          />
-          {provider === "supermemory" ? (
-            <SettingsChoices
-              label={t("Connection")}
-              value={mode}
-              choices={[
-                { value: "cloud", label: t("Cloud") },
-                { value: "local", label: t("Local") },
-              ]}
-              onChange={setMode}
-            />
-          ) : null}
-          {provider === "serenity" || mode === "local" ? (
-            <SettingsField
-              label={provider === "serenity" ? t("MCP endpoint") : t("Base URL")}
-              value={endpoint}
-              onChangeText={setEndpoint}
-              keyboardType="url"
-              placeholder={
-                provider === "serenity" ? "https://example.com/mcp" : "http://localhost:6767"
-              }
-            />
-          ) : null}
-          <SettingsField
-            label={provider === "serenity" ? t("Bearer token") : t("API key")}
-            value={key}
-            onChangeText={setKey}
-            secureTextEntry
-            editable={!action.busy}
-          />
-          {provider === "serenity" ? (
+          {resource.data ? accessControls : null}
+          {!resource.data ? (
             <>
-              <SettingsField label={t("Brain label")} value={label} onChangeText={setLabel} />
-              <SettingsToggle label={t("Allow writing")} value={write} onChange={setWrite} />
+              <SettingsChoices
+                label={t("Choose a memory service")}
+                value={provider}
+                choices={[
+                  { value: "supermemory", label: "Supermemory" },
+                  { value: "serenity", label: "Serenity" },
+                ]}
+                onChange={(next) => {
+                  setProvider(next);
+                  setEndpoint("");
+                  setKey("");
+                }}
+                disabled={action.busy}
+              />
+              {provider === "supermemory" ? (
+                <SettingsChoices
+                  label={t("Where is Supermemory running?")}
+                  value={mode}
+                  choices={[
+                    { value: "cloud", label: t("Hosted service") },
+                    { value: "local", label: t("Self-hosted server") },
+                  ]}
+                  onChange={setMode}
+                  disabled={action.busy}
+                />
+              ) : null}
+              <SettingsText>
+                {provider === "serenity"
+                  ? t("Enter the connection details from your Serenity administrator.")
+                  : mode === "local"
+                    ? t("Enter the server address and API key from your Supermemory administrator.")
+                    : t(
+                        "Enter the API key from your Supermemory account. Connecting lets bots send information to this service.",
+                      )}
+              </SettingsText>
+              {provider === "serenity" || mode === "local" ? (
+                <SettingsField
+                  label={
+                    provider === "serenity"
+                      ? t("Serenity server address")
+                      : t("Supermemory server address")
+                  }
+                  value={endpoint}
+                  onChangeText={setEndpoint}
+                  keyboardType="url"
+                  editable={!action.busy}
+                  placeholder={
+                    provider === "serenity" ? "https://example.com/mcp" : "http://localhost:6767"
+                  }
+                />
+              ) : null}
+              <SettingsField
+                label={
+                  provider === "serenity" ? t("Serenity access token") : t("Supermemory API key")
+                }
+                value={key}
+                onChangeText={setKey}
+                secureTextEntry
+                editable={!action.busy}
+              />
+              {provider === "serenity" ? (
+                <>
+                  <SettingsField
+                    editable={!action.busy}
+                    label={t("Memory collection name (optional)")}
+                    value={label}
+                    onChangeText={setLabel}
+                  />
+                  <SettingsToggle
+                    label={t("Let bots save new memories")}
+                    value={write}
+                    onChange={setWrite}
+                    disabled={action.busy}
+                  />
+                  <SettingsText>
+                    {t(
+                      "When off, bots can search existing memories but cannot save new ones to Serenity.",
+                    )}
+                  </SettingsText>
+                </>
+              ) : null}
+              {accessControls}
+              <SettingsButton
+                label={action.busy ? t("Connecting…") : t("Connect memory service")}
+                primary
+                disabled={
+                  action.busy ||
+                  resource.loading ||
+                  key.trim().length < 8 ||
+                  ((provider === "serenity" || mode === "local") && !endpoint.trim())
+                }
+                onPress={() =>
+                  void action.run(async () => {
+                    await rpc("memory/connectProvider", {
+                      provider,
+                      defaultMemoryScope: scope,
+                      settings:
+                        provider === "serenity"
+                          ? {
+                              endpoint: endpoint.trim(),
+                              brainLabel: label.trim(),
+                              allowWrites: String(write),
+                            }
+                          : { mode, ...(mode === "local" ? { baseUrl: endpoint.trim() } : {}) },
+                      credentials:
+                        provider === "serenity" ? { token: key.trim() } : { apiKey: key.trim() },
+                    });
+                    setKey("");
+                    setConnecting(false);
+                    await resource.reload();
+                  })
+                }
+              />
             </>
           ) : null}
-          <SettingsButton
-            label={t("Connect")}
-            primary
-            disabled={
-              action.busy ||
-              resource.loading ||
-              key.trim().length < 8 ||
-              ((provider === "serenity" || mode === "local") && !endpoint.trim())
-            }
-            onPress={() =>
-              void action.run(async () => {
-                await rpc("memory/connectProvider", {
-                  provider,
-                  defaultMemoryScope: scope,
-                  settings:
-                    provider === "serenity"
-                      ? {
-                          endpoint: endpoint.trim(),
-                          brainLabel: label.trim(),
-                          allowWrites: String(write),
-                        }
-                      : { mode, ...(mode === "local" ? { baseUrl: endpoint.trim() } : {}) },
-                  credentials:
-                    provider === "serenity" ? { token: key.trim() } : { apiKey: key.trim() },
-                });
-                setKey("");
-                await resource.reload();
-              })
-            }
-          />
         </>
+      ) : null}
+      {!resource.loading && !resource.error && !resource.data ? (
+        <SettingsButton
+          label={connecting ? t("Cancel setup") : t("Connect a memory service")}
+          disabled={action.busy}
+          primary={!connecting}
+          onPress={() => {
+            setConnecting(!connecting);
+            setKey("");
+          }}
+        />
+      ) : null}
+      <View style={{ borderTopWidth: 1, borderColor: c.border, paddingTop: 20, gap: 8 }}>
+        <SettingsButton
+          label={t("Saved knowledge & skills")}
+          onPress={() => router.push("/knowledge")}
+        />
+        <SettingsText>
+          {t(
+            "View and edit saved documents and bot instructions. Managed separately from the memory service.",
+          )}
+        </SettingsText>
+      </View>
+      {resource.data ? (
+        <SettingsButton
+          label={t("Disconnect memory service")}
+          destructive
+          disabled={action.busy || resource.loading}
+          onPress={() =>
+            Alert.alert(
+              t("Disconnect memory service?"),
+              t(
+                "Bots will stop using this service. Memories stored in the service will not be deleted.",
+              ),
+              [
+                { text: t("Cancel"), style: "cancel" },
+                {
+                  text: t("Disconnect"),
+                  style: "destructive",
+                  onPress: () =>
+                    void action.run(async () => {
+                      await rpc("memory/disconnectProvider");
+                      setKey("");
+                      setConnecting(false);
+                      await resource.reload();
+                    }),
+                },
+              ],
+            )
+          }
+        />
       ) : null}
     </SettingsPage>
   );
