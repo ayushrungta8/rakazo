@@ -30,9 +30,14 @@ vi.mock("react-native", async () => {
     };
 
   return {
-    View: mockComponent("rn-view", ["minWidth"]),
+    View: mockComponent("rn-view", ["width", "minWidth"]),
     Text: mockComponent("rn-text", ["accessibilityRole"]),
-    ScrollView: mockComponent("rn-scroll-view", ["horizontal"]),
+    ScrollView: mockComponent("rn-scroll-view", [
+      "horizontal",
+      "width",
+      "nestedScrollEnabled",
+      "showsHorizontalScrollIndicator",
+    ]),
     Pressable: mockComponent("rn-pressable", ["accessibilityRole"]),
     TextInput: mockComponent("rn-text-input"),
     Image: mockComponent("rn-image"),
@@ -80,16 +85,19 @@ describe("native markdown tables", () => {
     const html = renderToStaticMarkup(<ChatMarkdown>{THREE_COLUMN_TABLE}</ChatMarkdown>);
     expect(html).toContain("<rn-scroll-view");
     expect(html).toContain('data-horizontal="true"');
+    expect(html).toContain('data-width="100%"');
+    expect(html).toContain('data-nested-scroll-enabled="true"');
+    expect(html).toContain('data-shows-horizontal-scroll-indicator="true"');
   });
 
-  it("sizes each row from its cell count so wide tables scroll instead of collapsing", () => {
-    // Rows get a minimum width of TABLE_MIN_COLUMN_WIDTH (96) per cell.
+  it("gives the content an explicit width while keeping the scroll viewport at bubble width", () => {
+    // The content has 160dp per column; the viewport stays at the bubble width.
     const narrow = renderToStaticMarkup(<ChatMarkdown>{THREE_COLUMN_TABLE}</ChatMarkdown>);
-    expect(narrow).toContain('data-min-width="288"');
-    expect(narrow).not.toContain('data-min-width="576"');
+    expect(narrow).toContain('data-width="480"');
+    expect(narrow).not.toContain('data-width="960"');
 
     const wide = renderToStaticMarkup(<ChatMarkdown>{SIX_COLUMN_TABLE}</ChatMarkdown>);
-    expect(wide).toContain('data-min-width="576"');
+    expect(wide).toContain('data-width="960"');
   });
 
   it("renders cell text and keeps inline links tappable inside cells", () => {
@@ -103,6 +111,6 @@ describe("native markdown tables", () => {
   it("applies the same table layout while streaming", () => {
     const html = renderToStaticMarkup(<ChatMarkdown streaming>{SIX_COLUMN_TABLE}</ChatMarkdown>);
     expect(html).toContain("<rn-scroll-view");
-    expect(html).toContain('data-min-width="576"');
+    expect(html).toContain('data-width="960"');
   });
 });

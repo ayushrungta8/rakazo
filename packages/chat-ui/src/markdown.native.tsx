@@ -1,4 +1,5 @@
 import { type ColorTokens, darkTokens, type ResolvedAppearance } from "@rakazo/ui-tokens";
+import type { ASTNode } from "@ronradtke/react-native-markdown-display";
 import Markdown, {
   createMarkdownIt,
   MarkdownStream,
@@ -89,6 +90,16 @@ function markdownStyles(palette: ColorTokens) {
     table: {
       borderColor: palette.border,
     },
+    th: {
+      minWidth: 0,
+      flexShrink: 1,
+      padding: 10,
+    },
+    td: {
+      minWidth: 0,
+      flexShrink: 1,
+      padding: 10,
+    },
     tr: {
       borderColor: palette.border,
     },
@@ -114,17 +125,24 @@ async function openSafeLink(url: string) {
   if (await Linking.canOpenURL(safeUrl)) await Linking.openURL(safeUrl);
 }
 
-// The library lays table rows out as flex rows of equal-width cells bound to the
-// bubble width, so wide tables collapse into unreadable slivers. Give each row a
-// minimum width per column and let wide tables scroll horizontally instead.
-const TABLE_MIN_COLUMN_WIDTH = 96;
+// Constrain the viewport independently of the table. A minimum row width alone
+// lets long cell text grow the viewport itself, clipping columns without overflow.
+const TABLE_MIN_COLUMN_WIDTH = 160;
+
+function tableColumnCount(node: ASTNode): number {
+  return node.type === "tr"
+    ? node.children.length
+    : Math.max(0, ...node.children.map(tableColumnCount));
+}
 
 function TableScrollView({
   children,
   style,
+  columns,
 }: {
   children?: ReactNode;
   style?: StyleProp<ViewStyle>;
+  columns: number;
 }) {
   // Percentage widths do not resolve inside a horizontal ScrollView, so the
   // content floor comes from the measured viewport: narrow tables still fill
@@ -133,10 +151,14 @@ function TableScrollView({
   return (
     <ScrollView
       horizontal
-      style={style}
+      nestedScrollEnabled
+      showsHorizontalScrollIndicator
+      style={[style, layout.tableViewport]}
       onLayout={(event) => setViewportWidth(event.nativeEvent.layout.width)}
     >
-      <View style={{ minWidth: viewportWidth }}>{children}</View>
+      <View style={{ width: Math.max(viewportWidth, columns * TABLE_MIN_COLUMN_WIDTH) }}>
+        {children}
+      </View>
     </ScrollView>
   );
 }
@@ -145,15 +167,16 @@ function TableScrollView({
 // outside the text flow and collapses the bubble height, overlapping later messages.
 const renderRules: RenderRules = {
   table: (node, children, _parent, styleMap) => (
-    <TableScrollView key={node.key} style={styleMap._VIEW_SAFE_table}>
+    <TableScrollView
+      key={node.key}
+      columns={tableColumnCount(node)}
+      style={styleMap._VIEW_SAFE_table}
+    >
       {children}
     </TableScrollView>
   ),
   tr: (node, children, _parent, styleMap) => (
-    <View
-      key={node.key}
-      style={[styleMap._VIEW_SAFE_tr, { minWidth: node.children.length * TABLE_MIN_COLUMN_WIDTH }]}
-    >
+    <View key={node.key} style={styleMap._VIEW_SAFE_tr}>
       {children}
     </View>
   ),
@@ -204,6 +227,12 @@ export const ChatMarkdown = memo(function ChatMarkdown({
 });
 
 const layout = StyleSheet.create({
+  tableViewport: {
+    width: "100%",
+    minWidth: 0,
+    flexShrink: 1,
+    flexGrow: 0,
+  },
   wrap: {
     width: "100%",
     minWidth: 0,
