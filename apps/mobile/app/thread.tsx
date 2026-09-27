@@ -1323,7 +1323,7 @@ function Thread() {
 
   function showAttachMenu() {
     presentMessageActionSheet({
-      title: t("Attach"),
+      title: t("Chat actions"),
       cancel: t("Cancel"),
       colorScheme,
       actions: [
@@ -1333,7 +1333,7 @@ function Thread() {
         },
         { text: t("Camera"), onPress: () => void addAttachments(takePhoto) },
         { text: t("File"), onPress: () => void addAttachments(pickDocuments) },
-        { text: t("Dictate message"), onPress: () => setShowDictation(true) },
+        { text: t("Type with your voice"), onPress: () => setShowDictation(true) },
         ...(!inGroup && botId ? [{ text: t("Voice call"), onPress: () => setShowCall(true) }] : []),
       ],
     });

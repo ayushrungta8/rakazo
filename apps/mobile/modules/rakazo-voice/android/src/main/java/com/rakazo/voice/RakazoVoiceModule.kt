@@ -21,12 +21,14 @@ class RakazoVoiceModule : Module() {
     AsyncFunction("available") {
       val context = appContext.reactContext ?: throw IllegalStateException("App not ready")
       mapOf("available" to SpeechRecognizer.isRecognitionAvailable(context), "onDevice" to (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)))
-    }
+    }.runOnQueue(Queues.MAIN)
     AsyncFunction("start") { sessionId: Int, locale: String, onDevice: Boolean ->
       val context = appContext.reactContext ?: throw IllegalStateException("App not ready")
       generation++
       val current = generation
+      recognizer?.cancel()
       recognizer?.destroy()
+      recognizer = null
       if (onDevice) require(Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) { "On-device recognition is unavailable" }
       val speech = if (onDevice && Build.VERSION.SDK_INT >= 31) SpeechRecognizer.createOnDeviceSpeechRecognizer(context) else SpeechRecognizer.createSpeechRecognizer(context)
       recognizer = speech
@@ -44,6 +46,7 @@ class RakazoVoiceModule : Module() {
       speech.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale)
+        if (onDevice) putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
       })

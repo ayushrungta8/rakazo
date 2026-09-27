@@ -1014,4 +1014,51 @@ export const DE_MESSAGES: Record<string, string> = {
     "Die Gerätestimme wurde nicht gestartet. Prüfe die Android-Einstellungen für Text-zu-Sprache und versuche es erneut.",
   "Device voice could not play. Check Android text-to-speech settings and try again.":
     "Die Gerätestimme konnte nicht wiedergegeben werden. Prüfe die Android-Einstellungen für Text-zu-Sprache und versuche es erneut.",
+  // Dictation and speech service recovery
+  "Allow microphone access in Android Settings, then try again.":
+    "Erlaube den Mikrofonzugriff in den Android-Einstellungen und versuche es erneut.",
+  "Audio stays on this phone. Requires an installed offline speech model for your language.":
+    "Audio bleibt auf diesem Telefon. Dafür muss ein Offline-Sprachmodell für deine Sprache installiert sein.",
+  "Cancel dictation": "Diktat abbrechen",
+  "Change speech method": "Erkennungsmethode ändern",
+  "Chat actions": "Chat-Aktionen",
+  "Connected voice service": "Verbundener Sprachdienst",
+  "Dictate more": "Weiter diktieren",
+  "Hide speech methods": "Erkennungsmethoden ausblenden",
+  "Insert into message": "In Nachricht einfügen",
+  "Microphone is busy or unavailable. Close other recording apps and try again.":
+    "Das Mikrofon ist belegt oder nicht verfügbar. Schließe andere Aufnahme-Apps und versuche es erneut.",
+  "No phone speech service is available. Enable a speech recognition service in Android Settings.":
+    "Auf dem Telefon ist kein Sprachdienst verfügbar. Aktiviere einen Spracherkennungsdienst in den Android-Einstellungen.",
+  "Offline only": "Nur offline",
+  "Phone speech service": "Sprachdienst des Telefons",
+  "Ready to listen": "Bereit zum Zuhören",
+  "Review your text": "Text überprüfen",
+  "Sends audio to the voice service connected in Settings. A transcription service must be connected first.":
+    "Sendet Audio an den in den Einstellungen verbundenen Sprachdienst. Zuerst muss ein Transkriptionsdienst verbunden werden.",
+  "Set up voice service": "Sprachdienst einrichten",
+  "Speak, review the text, then add it to your message. Nothing is sent automatically.":
+    "Sprich, überprüfe den Text und füge ihn dann deiner Nachricht hinzu. Es wird nichts automatisch gesendet.",
+  "Speech method": "Erkennungsmethode",
+  "Speech service could not connect. Check your connection and try again.":
+    "Der Sprachdienst konnte keine Verbindung herstellen. Prüfe deine Verbindung und versuche es erneut.",
+  "Speech service is busy. Wait a moment and try again.":
+    "Der Sprachdienst ist beschäftigt. Warte einen Moment und versuche es erneut.",
+  "Start dictation": "Diktat starten",
+  "Starting microphone…": "Mikrofon wird gestartet…",
+  "Stop & review": "Stoppen und überprüfen",
+  "The offline speech engine does not support this language. Use phone dictation instead.":
+    "Die Offline-Spracherkennung unterstützt diese Sprache nicht. Verwende stattdessen den Sprachdienst des Telefons.",
+  "The offline speech language is not downloaded. Download it in Android speech settings or use phone dictation.":
+    "Das Offline-Sprachmodell ist nicht heruntergeladen. Lade es in den Android-Spracheinstellungen herunter oder verwende den Sprachdienst des Telefons.",
+  "The phone’s speech service does not support this language. Check its language settings.":
+    "Der Sprachdienst des Telefons unterstützt diese Sprache nicht. Prüfe seine Spracheinstellungen.",
+  "The speech service did not return a transcript. Try phone dictation or check Android speech settings.":
+    "Der Sprachdienst hat keinen Text zurückgegeben. Versuche den Sprachdienst des Telefons oder prüfe die Android-Spracheinstellungen.",
+  "Turning speech into text…": "Sprache wird in Text umgewandelt…",
+  "Type with your voice": "Mit Sprache tippen",
+  "Uses Android’s speech service. It may send audio to its provider.":
+    "Verwendet den Sprachdienst von Android. Er kann Audio an seinen Anbieter senden.",
+  "Your message": "Deine Nachricht",
+  "Your words will appear here": "Deine Worte erscheinen hier",
 };

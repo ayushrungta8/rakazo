@@ -976,4 +976,50 @@ export const ZH_MESSAGES: Record<string, string> = {
     "设备语音未启动。请检查 Android 的文字转语音设置，然后重试。",
   "Device voice could not play. Check Android text-to-speech settings and try again.":
     "无法播放设备语音。请检查 Android 的文字转语音设置，然后重试。",
+  // Dictation and speech service recovery
+  "Allow microphone access in Android Settings, then try again.":
+    "请在 Android 设置中允许麦克风访问，然后重试。",
+  "Audio stays on this phone. Requires an installed offline speech model for your language.":
+    "音频保留在此手机上。需要安装适用于你所用语言的离线语音模型。",
+  "Cancel dictation": "取消听写",
+  "Change speech method": "更改语音识别方式",
+  "Chat actions": "聊天操作",
+  "Connected voice service": "已连接的语音服务",
+  "Dictate more": "继续听写",
+  "Hide speech methods": "隐藏语音识别方式",
+  "Insert into message": "插入消息",
+  "Microphone is busy or unavailable. Close other recording apps and try again.":
+    "麦克风正忙或不可用。请关闭其他录音应用后重试。",
+  "No phone speech service is available. Enable a speech recognition service in Android Settings.":
+    "手机上没有可用的语音服务。请在 Android 设置中启用语音识别服务。",
+  "Offline only": "仅离线",
+  "Phone speech service": "手机语音服务",
+  "Ready to listen": "准备聆听",
+  "Review your text": "检查你的文本",
+  "Sends audio to the voice service connected in Settings. A transcription service must be connected first.":
+    "将音频发送到设置中连接的语音服务。需要先连接支持转写的服务。",
+  "Set up voice service": "设置语音服务",
+  "Speak, review the text, then add it to your message. Nothing is sent automatically.":
+    "说话后检查文本，再将其添加到消息中。不会自动发送任何内容。",
+  "Speech method": "语音识别方式",
+  "Speech service could not connect. Check your connection and try again.":
+    "语音服务无法连接。请检查网络连接后重试。",
+  "Speech service is busy. Wait a moment and try again.": "语音服务正忙。请稍等片刻后重试。",
+  "Start dictation": "开始听写",
+  "Starting microphone…": "正在启动麦克风…",
+  "Stop & review": "停止并检查",
+  "The offline speech engine does not support this language. Use phone dictation instead.":
+    "离线语音引擎不支持此语言。请改用手机语音听写。",
+  "The offline speech language is not downloaded. Download it in Android speech settings or use phone dictation.":
+    "尚未下载此语言的离线语音模型。请在 Android 语音设置中下载，或使用手机语音听写。",
+  "The phone’s speech service does not support this language. Check its language settings.":
+    "手机的语音服务不支持此语言。请检查其语言设置。",
+  "The speech service did not return a transcript. Try phone dictation or check Android speech settings.":
+    "语音服务未返回转写文本。请尝试手机语音听写，或检查 Android 语音设置。",
+  "Turning speech into text…": "正在将语音转为文本…",
+  "Type with your voice": "用语音输入",
+  "Uses Android’s speech service. It may send audio to its provider.":
+    "使用 Android 的语音服务。该服务可能会将音频发送给其提供方。",
+  "Your message": "你的消息",
+  "Your words will appear here": "你说的话将显示在这里",
 };

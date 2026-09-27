@@ -1010,4 +1010,51 @@ export const RU_MESSAGES: Record<string, string> = {
     "Голос устройства не запустился. Проверьте настройки синтеза речи Android и попробуйте снова.",
   "Device voice could not play. Check Android text-to-speech settings and try again.":
     "Не удалось воспроизвести голос устройства. Проверьте настройки синтеза речи Android и попробуйте снова.",
+  // Dictation and speech service recovery
+  "Allow microphone access in Android Settings, then try again.":
+    "Разрешите доступ к микрофону в настройках Android и попробуйте снова.",
+  "Audio stays on this phone. Requires an installed offline speech model for your language.":
+    "Аудио остаётся на этом телефоне. Нужна установленная офлайн-модель распознавания для вашего языка.",
+  "Cancel dictation": "Отменить диктовку",
+  "Change speech method": "Изменить способ распознавания",
+  "Chat actions": "Действия в чате",
+  "Connected voice service": "Подключённый голосовой сервис",
+  "Dictate more": "Продиктовать ещё",
+  "Hide speech methods": "Скрыть способы распознавания",
+  "Insert into message": "Вставить в сообщение",
+  "Microphone is busy or unavailable. Close other recording apps and try again.":
+    "Микрофон занят или недоступен. Закройте другие приложения для записи и попробуйте снова.",
+  "No phone speech service is available. Enable a speech recognition service in Android Settings.":
+    "На телефоне нет доступной службы речи. Включите службу распознавания речи в настройках Android.",
+  "Offline only": "Только офлайн",
+  "Phone speech service": "Служба речи телефона",
+  "Ready to listen": "Готово к прослушиванию",
+  "Review your text": "Проверьте текст",
+  "Sends audio to the voice service connected in Settings. A transcription service must be connected first.":
+    "Отправляет аудио голосовому сервису, подключённому в настройках. Сначала нужно подключить сервис расшифровки речи.",
+  "Set up voice service": "Настроить голосовой сервис",
+  "Speak, review the text, then add it to your message. Nothing is sent automatically.":
+    "Продиктуйте текст, проверьте его и добавьте в сообщение. Ничего не отправляется автоматически.",
+  "Speech method": "Способ распознавания",
+  "Speech service could not connect. Check your connection and try again.":
+    "Службе речи не удалось подключиться. Проверьте соединение и попробуйте снова.",
+  "Speech service is busy. Wait a moment and try again.":
+    "Служба речи занята. Подождите немного и попробуйте снова.",
+  "Start dictation": "Начать диктовку",
+  "Starting microphone…": "Запуск микрофона…",
+  "Stop & review": "Остановить и проверить",
+  "The offline speech engine does not support this language. Use phone dictation instead.":
+    "Офлайн-распознавание не поддерживает этот язык. Используйте диктовку через службу телефона.",
+  "The offline speech language is not downloaded. Download it in Android speech settings or use phone dictation.":
+    "Офлайн-модель для этого языка не загружена. Загрузите её в настройках речи Android или используйте диктовку через службу телефона.",
+  "The phone’s speech service does not support this language. Check its language settings.":
+    "Служба речи телефона не поддерживает этот язык. Проверьте её языковые настройки.",
+  "The speech service did not return a transcript. Try phone dictation or check Android speech settings.":
+    "Служба речи не вернула текст. Попробуйте диктовку через службу телефона или проверьте настройки речи Android.",
+  "Turning speech into text…": "Преобразование речи в текст…",
+  "Type with your voice": "Ввод голосом",
+  "Uses Android’s speech service. It may send audio to its provider.":
+    "Использует службу речи Android. Она может отправлять аудио своему провайдеру.",
+  "Your message": "Ваше сообщение",
+  "Your words will appear here": "Ваши слова появятся здесь",
 };
