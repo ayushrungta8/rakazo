@@ -464,7 +464,7 @@ export default function Home() {
   return (
     <View style={[styles.screen, { paddingTop: Math.max(insets.top, 20) }]}>
       <View style={styles.header}>
-        <CircleButton accessibilityLabel={t("Account")} onPress={() => router.push("/account")}>
+        <CircleButton accessibilityLabel={t("Settings")} onPress={() => router.push("/settings")}>
           <Text style={styles.profileInitials}>{initials}</Text>
         </CircleButton>
         <View style={styles.headerActions}>

@@ -1,4 +1,18 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  Settings: "设置",
+  // Settings navigation
+  "AI & connections": "AI 与连接",
+  "AI data sharing": "AI 数据共享",
+  "Account & app": "账户与应用",
+  "App preferences": "应用偏好设置",
+  "Chats, routines, memory and files": "聊天、例行任务、记忆与文件",
+  "Choose a bot": "选择 Bot",
+  "Create a bot to add routines.": "创建 Bot 后即可添加例行任务。",
+  "Models, voice and connected apps": "模型、语音与已连接的应用",
+  "No archived bots": "没有已归档的 Bot",
+  "Profile, appearance and notifications": "个人资料、外观与通知",
+  Workspace: "工作区",
+
   "Update your server to use AI data sharing in this mobile version.":
     "请更新服务器，以便在此移动版本中使用 AI 数据共享功能。",
   "Release computer": "释放电脑",

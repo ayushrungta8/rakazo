@@ -1,4 +1,18 @@
 export const RU_MESSAGES: Record<string, string> = {
+  Settings: "Настройки",
+  // Settings navigation
+  "AI & connections": "ИИ и подключения",
+  "AI data sharing": "Передача данных ИИ",
+  "Account & app": "Аккаунт и приложение",
+  "App preferences": "Настройки приложения",
+  "Chats, routines, memory and files": "Чаты, задачи, память и файлы",
+  "Choose a bot": "Выберите бота",
+  "Create a bot to add routines.": "Создайте бота, чтобы добавить задачи.",
+  "Models, voice and connected apps": "Модели, голос и подключённые приложения",
+  "No archived bots": "Нет архивных ботов",
+  "Profile, appearance and notifications": "Профиль, оформление и уведомления",
+  Workspace: "Рабочее пространство",
+
   "Update your server to use AI data sharing in this mobile version.":
     "Обновите сервер, чтобы использовать обмен данными с ИИ в этой версии мобильного приложения.",
   "Ask the server owner to configure this provider.":

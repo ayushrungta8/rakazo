@@ -1,4 +1,18 @@
 export const DE_MESSAGES: Record<string, string> = {
+  Settings: "Einstellungen",
+  // Settings navigation
+  "AI & connections": "KI & Verbindungen",
+  "AI data sharing": "KI-Datenfreigabe",
+  "Account & app": "Konto & App",
+  "App preferences": "App-Einstellungen",
+  "Chats, routines, memory and files": "Chats, Routinen, Erinnerungen und Dateien",
+  "Choose a bot": "Bot auswählen",
+  "Create a bot to add routines.": "Erstelle einen Bot, um Routinen hinzuzufügen.",
+  "Models, voice and connected apps": "Modelle, Stimme und verbundene Apps",
+  "No archived bots": "Keine archivierten Bots",
+  "Profile, appearance and notifications": "Profil, Erscheinungsbild und Benachrichtigungen",
+  Workspace: "Arbeitsbereich",
+
   // shared/const
   "Chat Settings": "Chat-Einstellungen",
   "Configure a plugin catalog on the server to connect apps.":

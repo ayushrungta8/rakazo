@@ -1121,7 +1121,7 @@ function Thread() {
       return;
     }
     router.push({
-      pathname: "/account",
+      pathname: action === "settings-usage" ? "/account" : "/settings",
       params: action === "settings-usage" ? { focus: "usage" } : undefined,
     });
   }
