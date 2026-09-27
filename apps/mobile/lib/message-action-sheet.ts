@@ -1,18 +1,36 @@
-import { ActionSheetIOS, Alert, Platform } from "react-native";
+import { ActionSheetIOS, Platform } from "react-native";
 
-type MessageAction = { text: string; onPress: () => void };
+export type MessageAction = { text: string; onPress: () => void; selected?: boolean };
+export type AndroidActionSheet = { actions: MessageAction[]; title?: string; cancel: string };
+
+let currentSheet: AndroidActionSheet | null = null;
+const listeners = new Set<() => void>();
+
+export function getAndroidActionSheet(): AndroidActionSheet | null {
+  return currentSheet;
+}
+
+export function subscribeAndroidActionSheet(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+export function dismissAndroidActionSheet(): void {
+  currentSheet = null;
+  for (const listener of listeners) listener();
+}
 
 export function presentMessageActionSheet({
   actions,
   title,
   cancel,
-  more,
   colorScheme,
 }: {
   actions: MessageAction[];
   title?: string;
   cancel: string;
-  more: string;
   colorScheme: "light" | "dark";
 }): void {
   if (Platform.OS === "ios") {
@@ -28,16 +46,6 @@ export function presentMessageActionSheet({
     return;
   }
 
-  function showPage(remaining: MessageAction[]) {
-    // Android alerts support three buttons. Back/outside tap dismisses every page.
-    const buttons =
-      remaining.length > 3
-        ? [...remaining.slice(0, 2), { text: more, onPress: () => showPage(remaining.slice(2)) }]
-        : [
-            ...remaining,
-            ...(remaining.length < 3 ? [{ text: cancel, style: "cancel" as const }] : []),
-          ];
-    Alert.alert(title ?? "", undefined, buttons, { cancelable: true });
-  }
-  showPage(actions);
+  currentSheet = { actions, title, cancel };
+  for (const listener of listeners) listener();
 }

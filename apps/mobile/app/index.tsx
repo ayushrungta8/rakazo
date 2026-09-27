@@ -59,6 +59,7 @@ import {
   spaceInboxItems,
 } from "../lib/inbox-spaces";
 import { dismissThreadNotifications, resumeLiveNotifications } from "../lib/live-notifications";
+import { presentMessageActionSheet } from "../lib/message-action-sheet";
 import { native, useThemedStyles } from "../lib/native";
 import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
@@ -496,12 +497,16 @@ export default function Home() {
             accessibilityLabel={t("Create")}
             onPress={() => {
               if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
-              Alert.alert(t("Create"), undefined, [
-                { text: t("New bot"), onPress: () => void createQuickBot() },
-                { text: t("New group"), onPress: () => router.push("/new-group") },
-                { text: t("New space"), onPress: () => router.push("/new-space") },
-                { text: t("Cancel"), style: "cancel" },
-              ]);
+              presentMessageActionSheet({
+                title: t("Create"),
+                actions: [
+                  { text: t("New bot"), onPress: () => void createQuickBot() },
+                  { text: t("New group"), onPress: () => router.push("/new-group") },
+                  { text: t("New space"), onPress: () => router.push("/new-space") },
+                ],
+                cancel: t("Cancel"),
+                colorScheme: appearance,
+              });
             }}
           >
             <NativeSymbol ios="plus" android="add" size={18} />

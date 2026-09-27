@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
+import { AndroidActionSheetHost } from "../components/android-action-sheet";
 import { AvatarStyleProvider } from "../components/avatar-style";
 import { ComputerUpdateProgress } from "../components/computer-update-progress";
 import { currentApiBase, loadApiBase, loadSessionToken, selectedSpaceId } from "../lib/api";
@@ -131,6 +132,7 @@ export default function Layout() {
                 <Stack.Screen name="computer" options={{ title: t("Computer") }} />
               </Stack>
               <ComputerUpdateProgress />
+              <AndroidActionSheetHost />
             </ThemeProvider>
           </AvatarStyleProvider>
         ) : (

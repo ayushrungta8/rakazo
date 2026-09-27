@@ -674,15 +674,16 @@ export default function Models() {
                       presentMessageActionSheet({
                         title: t("Reasoning effort"),
                         cancel: t("Cancel"),
-                        more: t("More"),
                         colorScheme,
                         actions: [
                           {
                             text: t("Default"),
+                            selected: thinkingLevel === null,
                             onPress: () => setThinkingLevel(null),
                           },
                           ...THINKING_LEVEL_OPTIONS.map((level) => ({
                             text: thinkingLevelLabel(level, t),
+                            selected: thinkingLevel === level,
                             onPress: () => setThinkingLevel(level),
                           })),
                         ],

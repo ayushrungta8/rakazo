@@ -1302,15 +1302,19 @@ function Thread() {
   );
 
   function showAttachMenu() {
-    Alert.alert(t("Attach"), undefined, [
-      {
-        text: t("Photo library"),
-        onPress: () => void addAttachments(pickFromLibrary),
-      },
-      { text: t("Camera"), onPress: () => void addAttachments(takePhoto) },
-      { text: t("File"), onPress: () => void addAttachments(pickDocuments) },
-      { text: t("Cancel"), style: "cancel" },
-    ]);
+    presentMessageActionSheet({
+      title: t("Attach"),
+      cancel: t("Cancel"),
+      colorScheme,
+      actions: [
+        {
+          text: t("Photo library"),
+          onPress: () => void addAttachments(pickFromLibrary),
+        },
+        { text: t("Camera"), onPress: () => void addAttachments(takePhoto) },
+        { text: t("File"), onPress: () => void addAttachments(pickDocuments) },
+      ],
+    });
   }
 
   async function addAttachments(
@@ -1399,7 +1403,6 @@ function Thread() {
               onPress: () =>
                 presentMessageActionSheet({
                   cancel: t("Cancel"),
-                  more: t("More"),
                   colorScheme,
                   actions: MESSAGE_REACTIONS.map((emoji) => ({
                     name: emoji,
@@ -1433,7 +1436,6 @@ function Thread() {
               })
             : undefined,
           cancel: t("Cancel"),
-          more: t("More"),
           colorScheme,
         }),
       accessibilityActions: actions.map((action) => ({ name: action.name, label: action.text })),

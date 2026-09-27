@@ -225,11 +225,11 @@ export default function Account() {
       title: t("Language"),
       actions: ACCOUNT_UI_LOCALES.map((code) => ({
         text: UI_LOCALE_LABELS[code],
+        selected: code === locale,
         onPress: () => applyLocale(code),
       })),
       colorScheme,
       cancel: t("Cancel"),
-      more: t("More"),
     });
   }
 

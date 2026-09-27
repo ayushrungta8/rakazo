@@ -205,11 +205,11 @@ export default function BotSettingsScreen() {
       title: t("Model"),
       actions: modelChoices.map((choice) => ({
         text: choice.label,
+        selected: choice.key === modelKey,
         onPress: () => selectModel(choice.key),
       })),
       colorScheme,
       cancel: t("Cancel"),
-      more: t("More"),
     });
   }
 
@@ -218,11 +218,11 @@ export default function BotSettingsScreen() {
       title: t("Thinking"),
       actions: thinkingChoices.map((choice) => ({
         text: choice.label,
+        selected: choice.key === thinkingLevel,
         onPress: () => setThinkingLevel(choice.key),
       })),
       colorScheme,
       cancel: t("Cancel"),
-      more: t("More"),
     });
   }
 
