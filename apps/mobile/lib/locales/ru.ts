@@ -1,4 +1,24 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Every minute": "Каждую минуту",
+  "Every day": "Каждый день",
+  "Every {count} minutes": "Каждые {count} мин.",
+  "Every {count} hours": "Каждые {count} ч.",
+  "Every {count} days": "Каждые {count} дн.",
+  "Weekdays at {time}": "По будням в {time}",
+  "Mondays at {time}": "По понедельникам в {time}",
+  "On the 1st at {time}": "1-го числа в {time}",
+  "Every day at {time}": "Каждый день в {time}",
+
+  Edit: "Изменить",
+  // Routine list
+  "Routines for {name}": "Задачи бота {name}",
+  "No routines yet": "Пока нет задач",
+  "Schedule recurring work or trigger it from an event.":
+    "Запланируйте повторяющуюся работу или запускайте её по событию.",
+  "Next: {time}": "Следующий запуск: {time}",
+  "Run {name} now": "Запустить {name} сейчас",
+  "More actions for {name}": "Другие действия для {name}",
+
   Settings: "Настройки",
   // Settings navigation
   "AI & connections": "ИИ и подключения",

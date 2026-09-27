@@ -1,4 +1,23 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Every minute": "每分钟",
+  "Every day": "每天",
+  "Every {count} minutes": "每 {count} 分钟",
+  "Every {count} hours": "每 {count} 小时",
+  "Every {count} days": "每 {count} 天",
+  "Weekdays at {time}": "工作日 {time}",
+  "Mondays at {time}": "每周一 {time}",
+  "On the 1st at {time}": "每月 1 日 {time}",
+  "Every day at {time}": "每天 {time}",
+
+  Edit: "编辑",
+  // Routine list
+  "Routines for {name}": "{name} 的例行任务",
+  "No routines yet": "暂无例行任务",
+  "Schedule recurring work or trigger it from an event.": "安排重复任务，或通过事件触发工作。",
+  "Next: {time}": "下次：{time}",
+  "Run {name} now": "立即运行 {name}",
+  "More actions for {name}": "{name} 的更多操作",
+
   Settings: "设置",
   // Settings navigation
   "AI & connections": "AI 与连接",

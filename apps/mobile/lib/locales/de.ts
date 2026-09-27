@@ -1,4 +1,24 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Every minute": "Jede Minute",
+  "Every day": "Jeden Tag",
+  "Every {count} minutes": "Alle {count} Minuten",
+  "Every {count} hours": "Alle {count} Stunden",
+  "Every {count} days": "Alle {count} Tage",
+  "Weekdays at {time}": "Werktags um {time}",
+  "Mondays at {time}": "Montags um {time}",
+  "On the 1st at {time}": "Am 1. um {time}",
+  "Every day at {time}": "Jeden Tag um {time}",
+
+  Edit: "Bearbeiten",
+  // Routine list
+  "Routines for {name}": "Routinen für {name}",
+  "No routines yet": "Noch keine Routinen",
+  "Schedule recurring work or trigger it from an event.":
+    "Plane wiederkehrende Aufgaben oder löse sie durch ein Ereignis aus.",
+  "Next: {time}": "Nächster Lauf: {time}",
+  "Run {name} now": "{name} jetzt ausführen",
+  "More actions for {name}": "Weitere Aktionen für {name}",
+
   Settings: "Einstellungen",
   // Settings navigation
   "AI & connections": "KI & Verbindungen",
