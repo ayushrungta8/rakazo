@@ -12,7 +12,24 @@ export const VOICE_RESPONSE_TIMEOUT_MS = 70_000;
 export const MAX_VOICE_AUDIO_BYTES = 16 * 1024 * 1024;
 const MAX_VOICE_ERROR_BYTES = 64 * 1024;
 
+let speechGeneration = 0;
+const playbackStops = new Set<() => void>();
+
+/** Stop current speech and invalidate audio still being rendered. */
+export async function stopSpeech(): Promise<void> {
+  speechGeneration++;
+  deviceSpeechSession++;
+  for (const stop of [...playbackStops]) stop();
+  try {
+    await (await loadExpoSpeech()).stop();
+  } catch {
+    /* Optional speech runtime. */
+  }
+}
+
 export async function speakText(text: string, opts: SpeechOptions = {}): Promise<boolean> {
+  const generation = ++speechGeneration;
+  for (const stop of [...playbackStops]) stop();
   let useDeviceVoice = false;
   try {
     useDeviceVoice = await loadDeviceVoiceEnabled();
@@ -21,6 +38,7 @@ export async function speakText(text: string, opts: SpeechOptions = {}): Promise
     // through hosted voice after the user opted for on-device only.
     useDeviceVoice = true;
   }
+  if (generation !== speechGeneration) return false;
   if (useDeviceVoice) return speakWithDeviceVoice(text);
   const requestContext = await captureApiRequestContext();
   const prepared = await rpc<{ ready: boolean; utterances: string[] }>(
@@ -28,9 +46,12 @@ export async function speakText(text: string, opts: SpeechOptions = {}): Promise
     { text, voiceId: opts.voiceId, botId: opts.botId },
     { requestContext },
   );
-  if (!prepared.ready) return false;
+  if (!prepared.ready || generation !== speechGeneration) return false;
   for (const utterance of prepared.utterances) {
-    await playMpeg(await renderUtterance(utterance, opts, requestContext));
+    const bytes = await renderUtterance(utterance, opts, requestContext);
+    if (generation !== speechGeneration) return false;
+    await playMpeg(bytes, () => generation === speechGeneration);
+    if (generation !== speechGeneration) return false;
   }
   return true;
 }
@@ -130,16 +151,24 @@ async function renderUtterance(
   }
 }
 
-export async function playMpeg(bytes: Uint8Array): Promise<void> {
+export async function playMpeg(
+  bytes: Uint8Array,
+  current: () => boolean = () => true,
+): Promise<void> {
+  if (!current()) return;
   const AudioCtor = (globalThis as { Audio?: typeof Audio }).Audio;
   if (typeof AudioCtor === "function") {
-    await playWithHtmlAudio(AudioCtor, bytes);
+    await playWithHtmlAudio(AudioCtor, bytes, current);
     return;
   }
-  await playWithNativeAudio(bytes);
+  await playWithNativeAudio(bytes, current);
 }
 
-async function playWithHtmlAudio(AudioCtor: typeof Audio, bytes: Uint8Array): Promise<void> {
+async function playWithHtmlAudio(
+  AudioCtor: typeof Audio,
+  bytes: Uint8Array,
+  current: () => boolean,
+): Promise<void> {
   const blob = new Blob([new Uint8Array(bytes)], { type: "audio/mpeg" });
   const url = URL.createObjectURL(blob);
   try {
@@ -149,11 +178,21 @@ async function playWithHtmlAudio(AudioCtor: typeof Audio, bytes: Uint8Array): Pr
       const finish = (error?: Error) => {
         if (settled) return;
         settled = true;
+        playbackStops.delete(stop);
         audio.onended = null;
         audio.onerror = null;
         if (error) reject(error);
         else resolve();
       };
+      const stop = () => {
+        audio.pause();
+        finish();
+      };
+      playbackStops.add(stop);
+      if (!current()) {
+        stop();
+        return;
+      }
       audio.onended = () => finish();
       audio.onerror = () => finish(new Error(t("Could not play that clip.")));
       try {
@@ -171,13 +210,16 @@ async function playWithHtmlAudio(AudioCtor: typeof Audio, bytes: Uint8Array): Pr
   }
 }
 
-async function playWithNativeAudio(bytes: Uint8Array): Promise<void> {
+async function playWithNativeAudio(bytes: Uint8Array, current: () => boolean): Promise<void> {
   const { createAudioPlayer, setAudioModeAsync } = await import("expo-audio");
+  if (!current()) return;
   await setAudioModeAsync({
+    allowsRecording: false,
     playsInSilentMode: true,
     interruptionMode: "mixWithOthers",
     shouldPlayInBackground: false,
   });
+  if (!current()) return;
   const file = new File(Paths.cache, `rakazo-voice-${Date.now()}.mp3`);
   file.create({ overwrite: true });
   file.write(bytesToBase64(bytes), { encoding: "base64" });
@@ -190,6 +232,7 @@ async function playWithNativeAudio(bytes: Uint8Array): Promise<void> {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        playbackStops.delete(stop);
         sub.remove();
         if (error) reject(error);
         else resolve();
@@ -215,6 +258,15 @@ async function playWithNativeAudio(bytes: Uint8Array): Promise<void> {
           );
         }
       });
+      const stop = () => {
+        player.pause();
+        finish();
+      };
+      playbackStops.add(stop);
+      if (!current()) {
+        stop();
+        return;
+      }
       try {
         player.play();
       } catch (error) {

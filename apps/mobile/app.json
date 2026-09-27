@@ -4,7 +4,7 @@
     "slug": "rakazo",
     "owner": "inbox-zero",
     "scheme": "rakazo",
-    "version": "1.0.14",
+    "version": "1.0.16",
     "orientation": "default",
     "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",
@@ -22,7 +22,8 @@
       [
         "expo-audio",
         {
-          "enableBackgroundPlayback": false
+          "enableBackgroundPlayback": false,
+          "microphonePermission": "Rakazo uses the microphone when you start dictation or a voice call."
         }
       ],
       "expo-localization",
@@ -40,7 +41,7 @@
         {
           "photosPermission": "Rakazo uses your photo library so you can attach images to a bot message.",
           "cameraPermission": "Rakazo uses the camera so you can attach photos to a bot message.",
-          "microphonePermission": false
+          "microphonePermission": "Rakazo uses the microphone when you start dictation or a voice call."
         }
       ],
       "expo-sharing",
@@ -73,12 +74,13 @@
         "NSLocalNetworkUsageDescription": "Rakazo connects to a self-hosted Rakazo server on your local network.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
-        }
+        },
+        "NSMicrophoneUsageDescription": "Rakazo uses the microphone when you start dictation or a voice call."
       }
     },
     "android": {
       "package": "com.rakazo.app",
-      "versionCode": 21,
+      "versionCode": 23,
       "softwareKeyboardLayoutMode": "resize",
       "icon": "./assets/icon.png",
       "adaptiveIcon": {

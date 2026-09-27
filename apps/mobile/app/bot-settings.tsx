@@ -1,3 +1,4 @@
+import type { VoiceInfo } from "@rakazo/contracts";
 import {
   BOT_COLORS,
   BOT_DESCRIPTION_MAX_LENGTH,
@@ -12,6 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { ComputerModePicker } from "../components/computer-mode-picker";
+import { SettingsButton, SettingsChoices, SettingsToggle } from "../components/settings-controls";
 import {
   type MobileBot,
   type MobileMe,
@@ -26,6 +28,8 @@ import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 
 type BotSettingsRecord = MobileBot & {
   description?: string;
+  memoryScope?: "isolated" | "shared" | null;
+  voiceId?: string | null;
 };
 
 type ModelOption = {
@@ -56,6 +60,11 @@ export default function BotSettingsScreen() {
   const [modelKey, setModelKey] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState("");
   const [autoSpeak, setAutoSpeak] = useState(false);
+  const [notifyOnFinish, setNotifyOnFinish] = useState(true);
+  const [memoryScope, setMemoryScope] = useState<"inherit" | "isolated" | "shared">("inherit");
+  const [voiceId, setVoiceId] = useState("");
+  const [voices, setVoices] = useState<VoiceInfo[]>([]);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
@@ -63,6 +72,20 @@ export default function BotSettingsScreen() {
   const [modelMetaError, setModelMetaError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    void rpc<VoiceInfo[]>("voice/voices", {})
+      .then((next) => {
+        if (live) setVoices(next);
+      })
+      .catch((err) => {
+        if (live) setVoiceError(err instanceof Error ? err.message : t("Could not load voices"));
+      });
+    return () => {
+      live = false;
+    };
+  }, [t]);
 
   useEffect(() => {
     if (!botId) return;
@@ -81,6 +104,9 @@ export default function BotSettingsScreen() {
         );
         setThinkingLevel(next.thinkingLevel ?? "");
         setAutoSpeak(next.autoSpeak);
+        setNotifyOnFinish(next.notifyOnFinish ?? true);
+        setMemoryScope(next.memoryScope ?? "inherit");
+        setVoiceId(next.voiceId ?? "");
       })
       .catch((err) => setError(err instanceof Error ? err.message : t("Could not load bot")));
   }, [botId]);
@@ -244,6 +270,9 @@ export default function BotSettingsScreen() {
         modelId?: string | null;
         thinkingLevel?: ThinkingLevel | null;
         autoSpeak?: boolean;
+        notifyOnFinish?: boolean;
+        memoryScope?: "isolated" | "shared" | null;
+        voiceId?: string | null;
       } = { botId };
       if (profile.name !== bot.name) input.name = profile.name;
       if (profile.title !== bot.title) input.title = profile.title;
@@ -267,6 +296,10 @@ export default function BotSettingsScreen() {
           : null;
       }
       if (autoSpeak !== bot.autoSpeak) input.autoSpeak = autoSpeak;
+      if (notifyOnFinish !== bot.notifyOnFinish) input.notifyOnFinish = notifyOnFinish;
+      if ((memoryScope === "inherit" ? null : memoryScope) !== (bot.memoryScope ?? null))
+        input.memoryScope = memoryScope === "inherit" ? null : memoryScope;
+      if ((voiceId || null) !== (bot.voiceId ?? null)) input.voiceId = voiceId || null;
       if (computerMode !== bot.computerMode) {
         await rpc(
           "bots/setComputer",
@@ -300,6 +333,63 @@ export default function BotSettingsScreen() {
             <BotAvatar color={color} identity={bot.id} size={64} status={bot.status} />
           </View>
         ) : null}
+        <View style={{ gap: 8, marginBottom: 20 }}>
+          <SettingsButton
+            label={t("Routines")}
+            onPress={() => router.push({ pathname: "/routines", params: { botId: botId ?? "" } })}
+          />
+          <SettingsButton
+            label={t("Knowledge & skills")}
+            onPress={() => router.push({ pathname: "/knowledge", params: { botId: botId ?? "" } })}
+          />
+          <SettingsButton
+            label={t("Scratchpad")}
+            onPress={() => router.push({ pathname: "/scratchpad", params: { botId: botId ?? "" } })}
+          />
+          <SettingsButton
+            label={t("Teach a task")}
+            onPress={() => router.push({ pathname: "/teaching", params: { botId: botId ?? "" } })}
+          />
+        </View>
+        <View style={{ gap: 16, marginBottom: 20 }}>
+          <SettingsToggle
+            label={t("Notify on completion")}
+            value={notifyOnFinish}
+            onChange={setNotifyOnFinish}
+            disabled={pending}
+          />
+          <SettingsChoices
+            label={t("Memory scope")}
+            value={memoryScope}
+            choices={[
+              { value: "inherit", label: t("Default") },
+              { value: "isolated", label: t("Isolated") },
+              { value: "shared", label: t("Shared") },
+            ]}
+            onChange={setMemoryScope}
+            disabled={pending}
+          />
+          <SettingsButton
+            label={`${t("Voice")}: ${voices.find((voice) => voice.id === voiceId)?.label ?? (voiceId || t("Account default"))}`}
+            disabled={pending}
+            onPress={() =>
+              presentMessageActionSheet({
+                title: t("Voice"),
+                cancel: t("Cancel"),
+                colorScheme,
+                actions: [
+                  { text: t("Account default"), selected: !voiceId, onPress: () => setVoiceId("") },
+                  ...voices.map((voice) => ({
+                    text: voice.label,
+                    selected: voiceId === voice.id,
+                    onPress: () => setVoiceId(voice.id),
+                  })),
+                ],
+              })
+            }
+          />
+          {voiceError ? <Text style={{ color: tokens.destructive }}>{voiceError}</Text> : null}
+        </View>
         <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Name")}</Text>
         <TextInput
           value={name}

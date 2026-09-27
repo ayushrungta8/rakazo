@@ -8,6 +8,7 @@ import {
   speakText,
   speakUtterance,
   speakWithDeviceVoice,
+  stopSpeech,
   VOICE_RESPONSE_TIMEOUT_MS,
 } from "./voice";
 
@@ -40,6 +41,7 @@ class FakeAudio {
 
 describe("mobile speech", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue(null);
     vi.mocked(captureApiRequestContext).mockResolvedValue({
       apiBase: "https://support.example",
@@ -64,6 +66,26 @@ describe("mobile speech", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("does not play a clip that finishes rendering after hang-up", async () => {
+    let finish: (response: Response) => void = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    );
+    const play = vi.spyOn(FakeAudio.prototype, "play");
+    const speaking = speakText("Read this");
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
+    await stopSpeech();
+    finish(new Response(new Uint8Array([1, 2, 3])));
+    await expect(speaking).resolves.toBe(false);
+    expect(play).not.toHaveBeenCalled();
   });
 
   it("keeps every request on the server and space captured before preparation", async () => {

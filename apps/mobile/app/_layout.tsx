@@ -129,6 +129,25 @@ export default function Layout() {
                 <Stack.Screen name="bot-settings" options={{ title: t("Chat settings") }} />
                 <Stack.Screen name="thread" options={{ title: t("Thread") }} />
                 <Stack.Screen name="routine" options={{ title: t("Routine") }} />
+                <Stack.Screen name="routines" options={{ title: t("Routines") }} />
+                <Stack.Screen name="routine-editor" options={{ title: t("Routine") }} />
+                <Stack.Screen name="knowledge" options={{ title: t("Knowledge & skills") }} />
+                <Stack.Screen name="scratchpad" options={{ title: t("Scratchpad") }} />
+                <Stack.Screen name="approvals" options={{ title: t("Action confirmations") }} />
+                <Stack.Screen name="memory" options={{ title: t("Memory") }} />
+                <Stack.Screen name="files" options={{ title: t("Files") }} />
+                <Stack.Screen name="file-preview" options={{ title: t("File") }} />
+                <Stack.Screen name="mcp-servers" options={{ title: t("MCP servers") }} />
+                <Stack.Screen name="messaging" options={{ title: t("Messaging") }} />
+                <Stack.Screen
+                  name="external-conversation"
+                  options={{ title: t("Conversation settings") }}
+                />
+                <Stack.Screen name="chat-management" options={{ title: t("Manage chats") }} />
+                <Stack.Screen name="peer-messages" options={{ title: t("Peer conversation") }} />
+                <Stack.Screen name="catalog" options={{ title: t("Tool catalog") }} />
+                <Stack.Screen name="teaching" options={{ title: t("Teach a task") }} />
+                <Stack.Screen name="teach-computer" options={{ title: t("Record task") }} />
                 <Stack.Screen name="computer" options={{ title: t("Computer") }} />
               </Stack>
               <ComputerUpdateProgress />

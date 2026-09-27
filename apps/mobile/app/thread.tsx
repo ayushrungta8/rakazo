@@ -73,12 +73,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppConnectCard } from "../components/AppConnectCard";
 import { AskActions } from "../components/AskActions";
 import { BotAvatar } from "../components/bot-avatar";
+import { DictationSheet } from "../components/dictation-sheet";
 import { LocationAskActions } from "../components/LocationAskActions";
 import {
   MarkdownArtifactPreview,
   type MarkdownArtifactPreviewTarget,
 } from "../components/markdown-artifact-preview";
 import { NativeSymbol } from "../components/native-symbol";
+import { VoiceCall } from "../components/voice-call";
 import {
   applyMobileThreadEvent,
   blockText,
@@ -330,6 +332,12 @@ function Thread() {
   }, [streamResponses]);
   const activeThreadId = useRef<string | undefined>(undefined);
   const [draft, setDraft] = useState("");
+  const [showDictation, setShowDictation] = useState(false);
+  const [showCall, setShowCall] = useState(false);
+  useEffect(() => {
+    setShowDictation(false);
+    setShowCall(false);
+  }, [threadKey]);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   const [agentSkills, setAgentSkills] = useState<AgentSkillCatalogEntry[]>([]);
@@ -448,7 +456,7 @@ function Thread() {
     if (!botId || inGroup || !currentBot) return;
     const decision = nextAutoSpeakAction({
       botId: currentBot.id,
-      autoSpeak: currentBot.autoSpeak,
+      autoSpeak: currentBot.autoSpeak && !showCall && !showDictation,
       focused: AppState.currentState === "active" && navigation.isFocused(),
       snapshotReady: snap?.botId === currentBot.id,
       lastSpokenBotId: autoSpokenBotId.current,
@@ -465,7 +473,17 @@ function Thread() {
     autoSpokenBotId.current = currentBot.id;
     autoSpoken.current = decision.messageId;
     void speakText(decision.text, { botId: currentBot.id }).catch(() => undefined);
-  }, [botId, inGroup, currentBot, navigation, snap?.botId, snap?.messages, snap?.run?.status]);
+  }, [
+    botId,
+    inGroup,
+    currentBot,
+    navigation,
+    snap?.botId,
+    snap?.messages,
+    snap?.run?.status,
+    showCall,
+    showDictation,
+  ]);
 
   useEffect(() => {
     speakFinishedReply();
@@ -1315,6 +1333,8 @@ function Thread() {
         },
         { text: t("Camera"), onPress: () => void addAttachments(takePhoto) },
         { text: t("File"), onPress: () => void addAttachments(pickDocuments) },
+        { text: t("Dictate message"), onPress: () => setShowDictation(true) },
+        ...(!inGroup && botId ? [{ text: t("Voice call"), onPress: () => setShowCall(true) }] : []),
       ],
     });
   }
@@ -2200,6 +2220,32 @@ function Thread() {
           onClose={() => setMarkdownPreview(null)}
         />
       ) : null}
+      {showDictation ? (
+        <DictationSheet
+          onText={(text) =>
+            setDraft((current) => (current ? `${current.trimEnd()} ${text}` : text))
+          }
+          onClose={() => setShowDictation(false)}
+        />
+      ) : null}
+      {showCall && botId && !inGroup ? (
+        <VoiceCall
+          botId={botId}
+          botName={displayName ?? t("Bot")}
+          snapshot={snap}
+          onSend={async (text) => {
+            await rpc("threads/send", { botId, text, clientNonce: newClientNonce() });
+            cancelFocusPrompt(botId);
+            await refresh();
+          }}
+          onFollowUp={async (text) => {
+            await rpc("threads/followUp", { botId, text });
+            await refresh();
+          }}
+          onAnswer={answerMessage}
+          onClose={() => setShowCall(false)}
+        />
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -2386,6 +2432,7 @@ const MessageBubble = memo(function MessageBubble({
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
   const { t } = useI18n();
+  const peerRouter = useRouter();
   const [peerExpanded, setPeerExpanded] = useState(false);
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
   const cardBotId = message.botId ?? botId;
@@ -2449,13 +2496,18 @@ const MessageBubble = memo(function MessageBubble({
       bots.find((bot) => bot.id === peerBotId)?.color ??
       members?.find((member) => member.botId === peerBotId)?.color ??
       tokens.mutedForeground;
-    // Compact receipt only: peer bodies stay out of the human thread.
-    // Full view-only peer chat is web-first; mobile keeps the chip without expand.
+    // Peer history opens separately so human chats keep compact receipts.
     return (
       <Pressable
         {...actionProps}
         accessible
         accessibilityLabel={label}
+        onPress={() =>
+          peerRouter.push({
+            pathname: "/peer-messages",
+            params: { botId: cardBotId, peerBotId, peerName: peer ?? "Bot" },
+          })
+        }
         style={{
           width: "100%",
           paddingVertical: 4,

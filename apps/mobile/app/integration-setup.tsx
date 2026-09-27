@@ -159,15 +159,20 @@ export default function IntegrationSetup() {
         <>
           <Text style={styles.text}>
             {choice === "executor"
-              ? t("Set up Executor on your server in the web app.")
-              : t("Finish MCP authorization in the web app.")}
+              ? t("Connect your Executor endpoint.")
+              : t("Authorize MCP servers and assign them to bots.")}
           </Text>
           {button(
-            t("Open web app"),
+            choice === "direct" ? t("MCP servers") : t("Connect Executor"),
             () => {
-              const url = new URL(state.webUrl);
-              if (choice === "direct") url.searchParams.set("mode", "mcp");
-              void Linking.openURL(url.toString());
+              if (choice === "direct") {
+                router.push("/mcp-servers");
+                return;
+              }
+              router.push({
+                pathname: "/integrations",
+                params: { preset: "executor", importKey: `executor:${Date.now()}` },
+              });
             },
             !state,
           )}

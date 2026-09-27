@@ -7,6 +7,7 @@ import {
   filterConnectionCatalogItems,
   humanizeToolName,
 } from "@rakazo/core";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -22,9 +23,11 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { SettingsChoices } from "../components/settings-controls";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
+import { integrationPrefill, sourceAuth } from "../lib/integration-catalog";
 import { loadLastBotId } from "../lib/last-bot";
 import { native, useThemedStyles } from "../lib/native";
 
@@ -75,6 +78,8 @@ function ConnectorLogo({
 }
 
 export default function Integrations() {
+  const params = useLocalSearchParams<Record<string, string>>();
+  const router = useRouter();
   const styles = useThemedStyles(createIntegrationsStyles);
   const { t } = useI18n();
   const { width } = useWindowDimensions();
@@ -89,7 +94,9 @@ export default function Integrations() {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [credential, setCredential] = useState("");
-  const [requiresAuth, setRequiresAuth] = useState(true);
+  const [authType, setAuthType] = useState<"none" | "bearer" | "header">("bearer");
+  const [authName, setAuthName] = useState("x-api-key");
+  const [sourceHint, setSourceHint] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
@@ -102,6 +109,26 @@ export default function Integrations() {
   const [toolsOpen, setToolsOpen] = useState(true);
   const [toolsTick, setToolsTick] = useState(0);
   const connectionAttempt = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const prefill = integrationPrefill(params);
+    if (!prefill) {
+      if (params.preset === "executor") {
+        setAdvancedOpen(true);
+        beginSource("executor");
+      }
+      return;
+    }
+    setAdvancedOpen(true);
+    setSourceKind(prefill.kind);
+    setName(prefill.name);
+    setUrl(prefill.source);
+    setAuthType(prefill.authType);
+    setAuthName(prefill.headerName);
+    setSourceHint(prefill.note);
+    setCredential("");
+    setSourceError(null);
+  }, [params.importKey]);
 
   const featuredTiles = useMemo(() => buildFeaturedConnectorTiles(catalog), [catalog]);
   const showFeatured = !query.trim();
@@ -191,7 +218,9 @@ export default function Integrations() {
     setName("");
     setUrl("");
     setCredential("");
-    setRequiresAuth(true);
+    setAuthType("bearer");
+    setAuthName("x-api-key");
+    setSourceHint(null);
   }
 
   function openDetail(item: ConnectionCatalogItem) {
@@ -345,7 +374,9 @@ export default function Integrations() {
     setName(kind === "treg" ? "Treg" : kind === "executor" ? "Executor" : "");
     setUrl(kind === "treg" ? "https://treg.to/mcp/" : "");
     setCredential("");
-    setRequiresAuth(kind === "treg" || kind === "executor");
+    setAuthType(kind === "treg" || kind === "executor" ? "bearer" : "none");
+    setAuthName("x-api-key");
+    setSourceHint(null);
   }
 
   async function addSource() {
@@ -370,12 +401,12 @@ export default function Integrations() {
           sourceKind === "treg"
             ? { preset: "treg", auth: { type: "bearer" } }
             : sourceKind === "api"
-              ? { openApi: true, auth: { type: requiresAuth ? "bearer" : "none" } }
+              ? { openApi: true, auth: sourceAuth(authType, authName) }
               : sourceKind === "graphql"
-                ? { auth: { type: requiresAuth ? "bearer" : "none" } }
+                ? { auth: sourceAuth(authType, authName) }
                 : {
                     preset: "custom",
-                    auth: { type: sourceKind === "executor" || requiresAuth ? "bearer" : "none" },
+                    auth: sourceAuth(sourceKind === "executor" ? "bearer" : authType, authName),
                   },
       });
       setCredential("");
@@ -650,6 +681,14 @@ export default function Integrations() {
 
             <Pressable
               accessibilityRole="button"
+              onPress={() => router.push("/catalog")}
+              style={styles.advancedToggle}
+            >
+              <Text style={styles.advancedLabel}>{t("Search integration catalog")}</Text>
+              <Text style={styles.chevron}>›</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
               accessibilityState={{ expanded: advancedOpen }}
               testID="integrations-advanced"
               onPress={() => {
@@ -729,17 +768,33 @@ export default function Integrations() {
                       />
                     ) : null}
                     {sourceKind !== "treg" && sourceKind !== "executor" ? (
-                      <Pressable
-                        accessibilityRole="button"
-                        onPress={() => setRequiresAuth((value) => !value)}
-                        style={styles.authToggle}
-                      >
-                        <Text style={styles.secondary}>
-                          {requiresAuth ? t("Bearer authentication") : t("No authentication")}
-                        </Text>
-                      </Pressable>
+                      <SettingsChoices
+                        label={t("Authentication")}
+                        value={authType}
+                        onChange={(type) => {
+                          setAuthType(type);
+                          setCredential("");
+                        }}
+                        choices={[
+                          { value: "none", label: t("None") },
+                          { value: "bearer", label: t("Bearer") },
+                          { value: "header", label: t("Header") },
+                        ]}
+                      />
                     ) : null}
-                    {sourceKind === "treg" || sourceKind === "executor" || requiresAuth ? (
+                    {sourceHint ? <Text style={styles.secondary}>{sourceHint}</Text> : null}
+                    {authType === "header" ? (
+                      <TextInput
+                        accessibilityLabel={t("Header name")}
+                        value={authName}
+                        onChangeText={setAuthName}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        placeholder="x-api-key"
+                        style={styles.input}
+                      />
+                    ) : null}
+                    {sourceKind === "treg" || sourceKind === "executor" || authType !== "none" ? (
                       <TextInput
                         value={credential}
                         onChangeText={setCredential}
@@ -751,7 +806,9 @@ export default function Integrations() {
                             ? t("Treg token")
                             : sourceKind === "executor"
                               ? t("Executor token")
-                              : t("Bearer token")
+                              : authType === "header"
+                                ? t("API key")
+                                : t("Bearer token")
                         }
                         placeholderTextColor={native.tertiaryLabel}
                         style={styles.input}

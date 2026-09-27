@@ -17,6 +17,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAvatarStyle } from "../components/avatar-style";
 import { BotAvatar } from "../components/bot-avatar";
+import { SettingsButton } from "../components/settings-controls";
 import type { MobileBot, MobileMe } from "../lib/api";
 import {
   currentApiBase,
@@ -415,6 +416,24 @@ export default function Account() {
           </View>
         ) : null}
 
+        <View style={{ gap: 8, marginBottom: 16 }}>
+          <SettingsButton
+            label={t("Manage chats")}
+            onPress={() => router.push("/chat-management")}
+          />
+          <SettingsButton label={t("MCP servers")} onPress={() => router.push("/mcp-servers")} />
+          <SettingsButton label={t("Messaging")} onPress={() => router.push("/messaging")} />
+          <SettingsButton label={t("Files")} onPress={() => router.push("/files")} />
+          <SettingsButton label={t("Memory")} onPress={() => router.push("/memory")} />
+          <SettingsButton
+            label={t("Knowledge & skills")}
+            onPress={() => router.push("/knowledge")}
+          />
+          <SettingsButton
+            label={t("Action confirmations")}
+            onPress={() => router.push("/approvals")}
+          />
+        </View>
         <Pressable
           accessibilityRole="button"
           disabled={pending}
