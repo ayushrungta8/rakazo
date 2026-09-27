@@ -493,8 +493,9 @@ private val UNDERSCORE_RUN = Regex("_+")
 private val WORD_CHAR_AT_START = Regex("^[\\p{L}\\p{N}\\p{M}]")
 // \z pins to the absolute end: Java `$` would also match before a trailing newline.
 private val WORD_CHAR_AT_END = Regex("[\\p{L}\\p{N}\\p{M}]\\z")
-private val NON_SPACE_AT_END = Regex("(?U)\\S\\z")
-private val NON_SPACE_AT_START = Regex("(?U)^\\S")
+// Android uses Unicode character classes by default and rejects the JVM's (?U) flag.
+private val NON_SPACE_AT_END = Regex("\\S\\z")
+private val NON_SPACE_AT_START = Regex("^\\S")
 
 /**
  * Escaped punctuation (\\*, \\|, ...) becomes a payload token so no later
