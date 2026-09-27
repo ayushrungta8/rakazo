@@ -49,6 +49,8 @@ vi.mock("expo-router", () => ({
   useLocalSearchParams: () => mock.params,
   useRouter: () => ({ push: mock.push, back: mock.back, replace: mock.replace }),
 }));
+vi.mock("../lib/voice", () => ({ stopSpeech: async () => undefined }));
+vi.mock("../lib/dictation-preference", () => ({ loadDictationMode: async () => "device" }));
 vi.mock("../lib/use-voice-recognition", () => ({
   useVoiceRecognition: () => ({ start: mock.start, finish: mock.finish, cancel: mock.cancel }),
 }));
@@ -84,69 +86,55 @@ function button(view: ReactTestRenderer, label: string) {
     .find((node) => node.props.accessibilityLabel === label)!;
 }
 
-async function render() {
+async function render(stopRequested = 0) {
   let view!: ReactTestRenderer;
   await act(async () => {
-    view = create(createElement(DictationSheet, { onText: mock.push, onClose: mock.back }));
+    view = create(
+      createElement(DictationSheet, { onText: mock.push, onClose: mock.back, stopRequested }),
+    );
   });
   return view;
 }
-it("does not start recording on open and uses phone speech on deliberate start", async () => {
+it("starts from the composer mic using the saved preference without a setup sheet", async () => {
   const view = await render();
-  expect(mock.start).not.toHaveBeenCalled();
-  expect(button(view, "Insert into message")).toBeUndefined();
-  expect(button(view, "Offline only")).toBeUndefined();
-  await act(async () => button(view, "Start dictation").props.onPress());
   expect(mock.start.mock.calls[0]![0].mode).toBe("device");
-  expect(button(view, "Stop & review")).toBeDefined();
+  expect(view.root.findAllByType("Modal" as ElementType)).toHaveLength(0);
+  expect(view.root.findAllByType("TextInput" as ElementType)).toHaveLength(0);
 });
-it("reviews and edits a result before deliberately inserting it", async () => {
-  const view = await render();
-  await act(async () => button(view, "Start dictation").props.onPress());
-  await act(async () => mock.start.mock.calls[0]![0].onText("Test words", true));
+it("puts only completed speech into the draft callback", async () => {
+  await render();
+  await act(async () => mock.start.mock.calls[0]![0].onText("Test words", false));
   expect(mock.push).not.toHaveBeenCalled();
-  await act(async () =>
-    view.root.findByType("TextInput" as ElementType).props.onChangeText("Edited words"),
-  );
-  await act(async () => button(view, "Insert into message").props.onPress());
-  expect(mock.push).toHaveBeenCalledWith("Edited words");
+  await act(async () => mock.start.mock.calls[0]![0].onText("Test words", true));
+  expect(mock.push).toHaveBeenCalledWith("Test words");
   expect(mock.back).toHaveBeenCalledOnce();
 });
-it("waits for final recognition after stopping and prevents double finish", async () => {
+it("finishes on the second mic tap and waits for a final result", async () => {
   const view = await render();
-  await act(async () => button(view, "Start dictation").props.onPress());
-  await act(async () => button(view, "Stop & review").props.onPress());
-  expect(button(view, "Turning speech into text…").props.disabled).toBe(true);
+  await act(async () =>
+    view.update(
+      createElement(DictationSheet, { onText: mock.push, onClose: mock.back, stopRequested: 1 }),
+    ),
+  );
   expect(mock.finish).toHaveBeenCalledOnce();
+  expect(mock.push).not.toHaveBeenCalled();
   await act(async () => mock.start.mock.calls[0]![0].onText("Finished", true));
-  expect(button(view, "Insert into message")).toBeDefined();
+  expect(mock.push).toHaveBeenCalledWith("Finished");
 });
 it("ignores late results after cancellation", async () => {
   const view = await render();
-  await act(async () => button(view, "Start dictation").props.onPress());
   const options = mock.start.mock.calls[0]![0];
   await act(async () => button(view, "Cancel dictation").props.onPress());
   await act(async () => options.onText("Late", true));
   expect(mock.push).not.toHaveBeenCalled();
-  expect(view.root.findAllByType("TextInput" as ElementType)).toHaveLength(0);
 });
-it("appends more dictation to reviewed text instead of replacing it", async () => {
-  const view = await render();
-  await act(async () => button(view, "Start dictation").props.onPress());
-  await act(async () => mock.start.mock.calls[0]![0].onText("First", true));
-  await act(async () => button(view, "Dictate more").props.onPress());
-  await act(async () => mock.start.mock.calls[1]![0].onText("Second", true));
-  expect(view.root.findByType("TextInput" as ElementType).props.value).toBe("First Second");
-});
-
 it("cancels background listening and ignores its late transcript", async () => {
-  const view = await render();
-  await act(async () => button(view, "Start dictation").props.onPress());
+  await render();
   const options = mock.start.mock.calls[0]![0];
   await act(async () => mock.background?.("background"));
   await act(async () => options.onText("Late background words", true));
-  expect(button(view, "Start dictation")).toBeDefined();
-  expect(view.root.findAllByType("TextInput" as ElementType)).toHaveLength(0);
+  expect(mock.push).not.toHaveBeenCalled();
+  expect(mock.back).toHaveBeenCalledOnce();
 });
 it("does not cancel a pending microphone permission prompt on inactivity", async () => {
   let resolve!: () => void;
@@ -156,10 +144,15 @@ it("does not cancel a pending microphone permission prompt on inactivity", async
         resolve = r;
       }),
   );
-  const view = await render();
-  await act(async () => button(view, "Start dictation").props.onPress());
+  await render();
   await act(async () => mock.background?.("inactive"));
   expect(mock.cancel).not.toHaveBeenCalled();
   await act(async () => resolve());
-  expect(button(view, "Stop & review")).toBeDefined();
+});
+it("offers recovery settings without changing recognition method in chat", async () => {
+  const view = await render();
+  await act(async () => mock.start.mock.calls[0]![0].onError(Error("Unavailable")));
+  await act(async () => button(view, "Voice settings").props.onPress());
+  expect(mock.push).toHaveBeenCalledWith("/voice");
+  expect(mock.back).toHaveBeenCalledOnce();
 });

@@ -1061,4 +1061,22 @@ export const DE_MESSAGES: Record<string, string> = {
     "Verwendet den Sprachdienst von Android. Er kann Audio an seinen Anbieter senden.",
   "Your message": "Deine Nachricht",
   "Your words will appear here": "Deine Worte erscheinen hier",
+
+  "Voice input": "Spracheingabe",
+  "Phone dictation": "Diktieren mit dem Telefon",
+  "Offline dictation": "Offline diktieren",
+  "Uses your phone’s speech service. It may send audio to its provider.":
+    "Verwendet den Sprachdienst deines Telefons. Er kann Audio an seinen Anbieter senden.",
+  "Keeps audio on your phone. Requires an installed offline speech language.":
+    "Audio bleibt auf deinem Telefon. Dafür muss eine Offline-Sprachdatei installiert sein.",
+  "Sends audio to your configured voice provider for transcription.":
+    "Sendet Audio zum Transkribieren an deinen eingerichteten Sprachanbieter.",
+  "Connect a voice provider that supports transcription below.":
+    "Verbinde unten einen Sprachanbieter, der Transkription unterstützt.",
+  "Could not read the dictation method. Choose it again in Voice settings.":
+    "Die Diktiermethode konnte nicht gelesen werden. Wähle sie in den Spracheinstellungen erneut aus.",
+  "Invalid dictation method.": "Ungültige Diktiermethode.",
+  "Listening… Tap the mic to stop.": "Ich höre zu… Tippe zum Beenden auf das Mikrofon.",
+  "Voice settings": "Spracheinstellungen",
+  "Stop dictation": "Diktieren beenden",
 };

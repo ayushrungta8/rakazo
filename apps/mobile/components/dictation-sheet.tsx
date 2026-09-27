@@ -1,59 +1,108 @@
-import Ionicons from "@react-native-vector-icons/ionicons";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { AppState, Modal, Text, View } from "react-native";
+import { AppState, Pressable, Text, View } from "react-native";
+import { loadDictationMode } from "../lib/dictation-preference";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
-import type { RecognitionMode } from "../lib/use-voice-recognition";
 import { useVoiceRecognition } from "../lib/use-voice-recognition";
-import {
-  SettingsButton,
-  SettingsChoices,
-  SettingsField,
-  SettingsPage,
-  SettingsText,
-} from "./settings-controls";
+import { stopSpeech } from "../lib/voice";
 
-type Phase = "idle" | "starting" | "listening" | "processing";
+export type DictationPhase = "idle" | "starting" | "listening" | "processing";
+/** Mounted by the composer mic. Results become an editable draft, never a sent message. */
 export function DictationSheet({
   onText,
   onClose,
+  onPhaseChange,
+  stopRequested = 0,
 }: {
   onText: (text: string) => void;
   onClose: () => void;
+  onPhaseChange?: (phase: DictationPhase) => void;
+  stopRequested?: number;
 }) {
   const recognition = useVoiceRecognition();
   const router = useRouter();
   const { t } = useI18n();
   const c = useMobileTokens();
-  const [text, setText] = useState("");
-  const [phase, setPhase] = useState<Phase>("idle");
-  const phaseRef = useRef<Phase>("idle");
-  const session = useRef(0);
+  const [phase, setPhase] = useState<DictationPhase>("starting");
+  const [partial, setPartial] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<RecognitionMode>("device");
-  const [methodsOpen, setMethodsOpen] = useState(false);
-  const busy = phase !== "idle";
-  const updatePhase = (next: Phase) => {
+  const phaseRef = useRef<DictationPhase>("idle");
+  const session = useRef(0);
+  const callbacks = useRef({ onText, onClose, onPhaseChange });
+  callbacks.current = { onText, onClose, onPhaseChange };
+  const update = (next: DictationPhase) => {
     phaseRef.current = next;
     setPhase(next);
-  };
-  const cancel = () => {
-    session.current++;
-    void recognition.cancel();
-    updatePhase("idle");
+    callbacks.current.onPhaseChange?.(next);
   };
   const close = () => {
-    cancel();
-    onClose();
+    session.current++;
+    void recognition.cancel();
+    callbacks.current.onClose();
+  };
+  const start = async () => {
+    if (phaseRef.current !== "idle") return;
+    const id = ++session.current;
+    setError(null);
+    setPartial("");
+    update("starting");
+    try {
+      await stopSpeech();
+      if (id !== session.current) return;
+      const mode = await loadDictationMode();
+      if (id !== session.current) return;
+      await recognition.start({
+        mode,
+        onText: (text, final) => {
+          if (id !== session.current) return;
+          setPartial(text);
+          if (final) {
+            if (text.trim()) {
+              callbacks.current.onText(text.trim());
+              close();
+            } else {
+              update("idle");
+              setError(t("No speech heard. Try again."));
+              void recognition.cancel();
+            }
+          }
+        },
+        onError: (err) => {
+          if (id !== session.current) return;
+          update("idle");
+          setError(err.message);
+          void recognition.cancel();
+        },
+      });
+      if (id !== session.current) return;
+      if (AppState.currentState === "background") {
+        close();
+        return;
+      }
+      if ((phaseRef.current as DictationPhase) === "starting") update("listening");
+    } catch (err) {
+      if (id !== session.current) return;
+      update("idle");
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+  const finish = async () => {
+    if (phaseRef.current !== "listening") return;
+    const id = session.current;
+    update("processing");
+    try {
+      await recognition.finish();
+    } catch (err) {
+      if (id !== session.current) return;
+      update("idle");
+      setError(err instanceof Error ? err.message : String(err));
+      void recognition.cancel();
+    }
   };
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "background" && phaseRef.current !== "starting") {
-        session.current++;
-        void recognition.cancel();
-        updatePhase("idle");
-      }
+      if (state === "background" && phaseRef.current !== "starting") close();
     });
     return () => {
       session.current++;
@@ -61,173 +110,54 @@ export function DictationSheet({
       void recognition.cancel();
     };
   }, []);
-  const start = async () => {
-    if (phaseRef.current !== "idle") return;
-    const id = ++session.current;
-    const prefix = text.trim();
-    setError(null);
-    updatePhase("starting");
-    try {
-      await recognition.start({
-        mode,
-        onText: (value, final) => {
-          if (id !== session.current) return;
-          setText([prefix, value.trim()].filter(Boolean).join(" "));
-          if (final) {
-            updatePhase("idle");
-            void recognition.cancel();
-          }
-        },
-        onError: (err) => {
-          if (id !== session.current) return;
-          setError(err.message);
-          updatePhase("idle");
-          void recognition.cancel();
-        },
-      });
-      if (id !== session.current) return;
-      if (AppState.currentState === "background") {
-        cancel();
-        return;
-      }
-      if ((phaseRef.current as Phase) === "starting") updatePhase("listening");
-    } catch (err) {
-      if (id !== session.current) return;
-      updatePhase("idle");
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
-  const finish = async () => {
-    if (phaseRef.current !== "listening") return;
-    const id = session.current;
-    updatePhase("processing");
-    try {
-      await recognition.finish();
-    } catch (err) {
-      if (id !== session.current) return;
-      updatePhase("idle");
-      setError(err instanceof Error ? err.message : String(err));
-      void recognition.cancel();
-    }
-  };
-  const method =
-    mode === "local"
-      ? t("Offline only")
-      : mode === "device"
-        ? t("Phone speech service")
-        : t("Connected voice service");
+  useEffect(() => {
+    if (phaseRef.current === "listening") void finish();
+    else if (phaseRef.current === "idle") void start();
+  }, [stopRequested]);
   return (
-    <Modal animationType="slide" presentationStyle="pageSheet" onRequestClose={close}>
-      <SettingsPage modal title={t("Type with your voice")} error={error}>
-        <SettingsText>
-          {t("Speak, review the text, then add it to your message. Nothing is sent automatically.")}
-        </SettingsText>
-        <View style={{ alignItems: "center", gap: 12, paddingVertical: 24 }}>
-          <Ionicons
-            name={busy ? "mic" : "mic-outline"}
-            size={36}
-            color={c.foreground}
-            accessible={false}
-          />
-          <Text
-            accessibilityLiveRegion="polite"
-            style={{ color: c.foreground, fontSize: 20, fontWeight: "600" }}
-          >
-            {phase === "starting"
+    <View style={{ gap: 8, paddingTop: 12 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Text
+          accessibilityLiveRegion="polite"
+          style={{
+            color: error ? c.destructive : c.foreground,
+            flex: 1,
+            fontSize: 14,
+            lineHeight: 20,
+          }}
+        >
+          {error ??
+            (phase === "starting"
               ? t("Starting microphone…")
               : phase === "listening"
-                ? t("Listening…")
-                : phase === "processing"
-                  ? t("Turning speech into text…")
-                  : text
-                    ? t("Review your text")
-                    : t("Ready to listen")}
-          </Text>
-        </View>
-        {text || busy ? (
-          <SettingsField
-            label={t("Your message")}
-            value={text}
-            onChangeText={setText}
-            multiline
-            editable={!busy}
-            placeholder={t("Your words will appear here")}
-          />
-        ) : null}
-        <SettingsButton
-          label={
-            phase === "listening"
-              ? t("Stop & review")
-              : phase === "starting"
-                ? t("Starting microphone…")
-                : phase === "processing"
-                  ? t("Turning speech into text…")
-                  : text
-                    ? t("Dictate more")
-                    : t("Start dictation")
-          }
-          primary={!text || busy}
-          disabled={phase === "starting" || phase === "processing"}
-          onPress={() => (phase === "listening" ? void finish() : void start())}
-        />
-        {text && !busy ? (
-          <SettingsButton
-            label={t("Insert into message")}
-            primary
-            onPress={() => {
-              onText(text.trim());
-              close();
-            }}
-            disabled={!text.trim()}
-          />
-        ) : null}
-        {!busy ? (
-          <View style={{ borderTopWidth: 1, borderColor: c.border, paddingTop: 16, gap: 12 }}>
-            <SettingsButton
-              label={methodsOpen ? t("Hide speech methods") : t("Change speech method")}
-              onPress={() => setMethodsOpen(!methodsOpen)}
-            />
-            {methodsOpen ? (
-              <SettingsChoices
-                label={t("Speech method")}
-                value={mode}
-                choices={[
-                  { value: "device", label: t("Phone speech service") },
-                  { value: "local", label: t("Offline only") },
-                  { value: "provider", label: t("Connected voice service") },
-                ]}
-                onChange={(next) => {
-                  setMode(next);
-                  setError(null);
-                }}
-              />
-            ) : (
-              <Text style={{ color: c.mutedForeground, fontSize: 14 }}>{method}</Text>
-            )}
-            <SettingsText>
-              {mode === "device"
-                ? t("Uses Android’s speech service. It may send audio to its provider.")
-                : mode === "local"
-                  ? t(
-                      "Audio stays on this phone. Requires an installed offline speech model for your language.",
-                    )
-                  : t(
-                      "Sends audio to the voice service connected in Settings. A transcription service must be connected first.",
-                    )}
-            </SettingsText>
-            {mode === "provider" ? (
-              <SettingsButton
-                label={t("Set up voice service")}
-                onPress={() => {
-                  close();
-                  router.push("/voice");
-                }}
-              />
-            ) : null}
-          </View>
-        ) : null}
-        <SettingsButton label={t("Cancel dictation")} onPress={close} />
-      </SettingsPage>
-    </Modal>
+                ? t("Listening… Tap the mic to stop.")
+                : t("Turning speech into text…"))}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("Cancel dictation")}
+          onPress={close}
+          style={{ minWidth: 48, minHeight: 48, justifyContent: "center", alignItems: "center" }}
+        >
+          <Text style={{ color: c.foreground, fontSize: 14 }}>{t("Cancel")}</Text>
+        </Pressable>
+      </View>
+      {partial && !error ? (
+        <Text style={{ color: c.foreground, fontSize: 15, lineHeight: 22 }}>{partial}</Text>
+      ) : null}
+      {error ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("Voice settings")}
+          onPress={() => {
+            close();
+            router.push("/voice");
+          }}
+          style={{ minHeight: 48, justifyContent: "center" }}
+        >
+          <Text style={{ color: c.foreground, fontSize: 14 }}>{t("Voice settings")}</Text>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }

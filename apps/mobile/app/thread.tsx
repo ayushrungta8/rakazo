@@ -73,6 +73,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppConnectCard } from "../components/AppConnectCard";
 import { AskActions } from "../components/AskActions";
 import { BotAvatar } from "../components/bot-avatar";
+import type { DictationPhase } from "../components/dictation-sheet";
 import { DictationSheet } from "../components/dictation-sheet";
 import { LocationAskActions } from "../components/LocationAskActions";
 import {
@@ -333,6 +334,8 @@ function Thread() {
   const activeThreadId = useRef<string | undefined>(undefined);
   const [draft, setDraft] = useState("");
   const [showDictation, setShowDictation] = useState(false);
+  const [dictationPhase, setDictationPhase] = useState<DictationPhase>("idle");
+  const [dictationStopRequested, setDictationStopRequested] = useState(0);
   const [showCall, setShowCall] = useState(false);
   useEffect(() => {
     setShowDictation(false);
@@ -1333,7 +1336,6 @@ function Thread() {
         },
         { text: t("Camera"), onPress: () => void addAttachments(takePhoto) },
         { text: t("File"), onPress: () => void addAttachments(pickDocuments) },
-        { text: t("Type with your voice"), onPress: () => setShowDictation(true) },
         ...(!inGroup && botId ? [{ text: t("Voice call"), onPress: () => setShowCall(true) }] : []),
       ],
     });
@@ -1968,6 +1970,19 @@ function Thread() {
             ))}
           </View>
         ) : null}
+        {showDictation ? (
+          <DictationSheet
+            onText={(text) =>
+              setDraft((current) => (current ? `${current.trimEnd()} ${text}` : text))
+            }
+            onClose={() => {
+              setShowDictation(false);
+              setDictationPhase("idle");
+            }}
+            onPhaseChange={setDictationPhase}
+            stopRequested={dictationStopRequested}
+          />
+        ) : null}
         <View
           style={{
             flexDirection: "row",
@@ -2126,8 +2141,44 @@ function Thread() {
             />
           </View>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              showDictation && dictationPhase === "listening"
+                ? t("Stop dictation")
+                : t("Dictate message")
+            }
+            accessibilityState={{
+              disabled: showDictation && ["starting", "processing"].includes(dictationPhase),
+            }}
+            disabled={showDictation && ["starting", "processing"].includes(dictationPhase)}
+            onPress={() => {
+              if (showDictation) setDictationStopRequested((value) => value + 1);
+              else {
+                setDictationPhase("starting");
+                setShowDictation(true);
+              }
+            }}
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 24,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: showDictation ? tokens.primary : tokens.card,
+              opacity:
+                showDictation && ["starting", "processing"].includes(dictationPhase) ? 0.5 : 1,
+            }}
+          >
+            <NativeSymbol
+              ios={showDictation && dictationPhase !== "idle" ? "stop.fill" : "mic"}
+              android={showDictation && dictationPhase !== "idle" ? "stop" : "mic-outline"}
+              size={20}
+              color={showDictation ? tokens.primaryForeground : tokens.foreground}
+            />
+          </Pressable>
+          <Pressable
             accessibilityLabel={t("Send")}
-            disabled={sending || !canSend}
+            disabled={sending || !canSend || showDictation}
             onPress={() => void send()}
             style={{
               backgroundColor: tokens.primary,
@@ -2136,7 +2187,7 @@ function Thread() {
               height: 44,
               alignItems: "center",
               justifyContent: "center",
-              opacity: sending || !canSend ? 0.5 : 1,
+              opacity: sending || !canSend || showDictation ? 0.5 : 1,
             }}
           >
             <NativeSymbol
@@ -2218,14 +2269,6 @@ function Thread() {
           threadTarget={artifactTarget}
           target={markdownPreview}
           onClose={() => setMarkdownPreview(null)}
-        />
-      ) : null}
-      {showDictation ? (
-        <DictationSheet
-          onText={(text) =>
-            setDraft((current) => (current ? `${current.trimEnd()} ${text}` : text))
-          }
-          onClose={() => setShowDictation(false)}
         />
       ) : null}
       {showCall && botId && !inGroup ? (

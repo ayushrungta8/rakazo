@@ -13,8 +13,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../lib/device-voice";
+import { loadDictationMode, saveDictationMode } from "../lib/dictation-preference";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
+import type { RecognitionMode } from "../lib/use-voice-recognition";
 import { speakText } from "../lib/voice";
 
 type VoiceCatalogEntry = {
@@ -30,6 +32,7 @@ type VoiceCredential = {
 };
 type VoiceStatus = {
   configured: boolean;
+  transcribe: boolean;
   ready: boolean;
   provider: string | null;
   voiceId: string;
@@ -39,6 +42,9 @@ type VoiceInfo = { id: string; label: string; description?: string };
 export default function VoiceSettings() {
   const styles = useThemedStyles(createVoiceStyles);
   const { t } = useI18n();
+  const [dictationMode, setDictationMode] = useState<RecognitionMode | null>(null);
+  const inputRevision = useRef(0);
+  const inputSaveInFlight = useRef(false);
   const [catalog, setCatalog] = useState<VoiceCatalogEntry[]>([]);
   const [credentials, setCredentials] = useState<VoiceCredential[]>([]);
   const [status, setStatus] = useState<VoiceStatus | null>(null);
@@ -50,7 +56,7 @@ export default function VoiceSettings() {
   const [deviceVoiceReady, setDeviceVoiceReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<
-    "connect" | "disconnect" | "voice" | "test" | "device-voice" | null
+    "connect" | "disconnect" | "voice" | "test" | "device-voice" | "dictation" | null
   >(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -80,6 +86,18 @@ export default function VoiceSettings() {
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
+      const inputLoadRevision = ++inputRevision.current;
+      void loadDictationMode()
+        .then((mode) => {
+          if (inputRevision.current === inputLoadRevision && !inputSaveInFlight.current)
+            setDictationMode(mode);
+        })
+        .catch((err: unknown) => {
+          if (inputRevision.current === inputLoadRevision && !inputSaveInFlight.current) {
+            setDictationMode(null);
+            setError(err instanceof Error ? err.message : t("Could not load voice settings"));
+          }
+        });
       const revision = ++deviceVoiceRevision.current;
       void loadDeviceVoiceEnabled()
         .then((value) => {
@@ -99,8 +117,29 @@ export default function VoiceSettings() {
           setError(err instanceof Error ? err.message : t("Could not load voice settings")),
         )
         .finally(() => setLoading(false));
+      return () => {
+        inputRevision.current++;
+      };
     }, [load, t]),
   );
+
+  async function chooseDictationMode(mode: RecognitionMode) {
+    if (pending !== null || inputSaveInFlight.current) return;
+    inputSaveInFlight.current = true;
+    inputRevision.current++;
+    setPending("dictation");
+    setError(null);
+    try {
+      await saveDictationMode(mode);
+      setDictationMode(mode);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Could not save that preference"));
+    } finally {
+      inputSaveInFlight.current = false;
+      inputRevision.current++;
+      setPending(null);
+    }
+  }
 
   async function toggleDeviceVoice() {
     if (pending !== null || !deviceVoiceReady) return;
@@ -195,6 +234,61 @@ export default function VoiceSettings() {
         {loading ? <ActivityIndicator color={native.secondaryLabel} /> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+        <Text accessibilityRole="header" style={styles.sectionTitle}>
+          {t("Voice input")}
+        </Text>
+        {(
+          [
+            {
+              mode: "device",
+              title: t("Phone dictation"),
+              detail: t("Uses your phone’s speech service. It may send audio to its provider."),
+            },
+            {
+              mode: "local",
+              title: t("Offline dictation"),
+              detail: t(
+                "Keeps audio on your phone. Requires an installed offline speech language.",
+              ),
+            },
+            {
+              mode: "provider",
+              title: t("Voice provider"),
+              detail: t("Sends audio to your configured voice provider for transcription."),
+            },
+          ] as const
+        ).map((choice) => (
+          <Pressable
+            key={choice.mode}
+            accessibilityRole="radio"
+            accessibilityLabel={choice.title}
+            accessibilityState={{
+              checked: dictationMode === choice.mode,
+              disabled: pending !== null,
+            }}
+            disabled={pending !== null}
+            onPress={() => void chooseDictationMode(choice.mode)}
+            style={[
+              styles.card,
+              dictationMode === choice.mode && styles.cardActive,
+              pending !== null && styles.disabled,
+            ]}
+          >
+            <View style={styles.methodTitle}>
+              <Text style={styles.cardTitle}>{choice.title}</Text>
+              {dictationMode === choice.mode ? <Text style={styles.check}>✓</Text> : null}
+            </View>
+            <Text style={styles.cardMeta}>{choice.detail}</Text>
+          </Pressable>
+        ))}
+        {dictationMode === "provider" && !status?.transcribe ? (
+          <Text style={styles.cardMeta}>
+            {t("Connect a voice provider that supports transcription below.")}
+          </Text>
+        ) : null}
+        <Text accessibilityRole="header" style={styles.sectionTitle}>
+          {t("Read replies aloud")}
+        </Text>
         <Pressable
           disabled={pending !== null || !deviceVoiceReady}
           onPress={() => void toggleDeviceVoice()}
@@ -320,6 +414,19 @@ function createVoiceStyles() {
     content: { padding: 20, gap: 10 },
     error: { color: tokens.destructive, marginBottom: 8 },
     notice: { color: tokens.success, marginBottom: 8 },
+    sectionTitle: {
+      color: native.label,
+      fontSize: 20,
+      fontWeight: "600",
+      marginTop: 12,
+      marginBottom: 4,
+    },
+    methodTitle: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+    },
     card: {
       borderRadius: 14,
       borderWidth: 1,

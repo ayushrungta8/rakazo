@@ -1022,4 +1022,22 @@ export const ZH_MESSAGES: Record<string, string> = {
     "使用 Android 的语音服务。该服务可能会将音频发送给其提供方。",
   "Your message": "你的消息",
   "Your words will appear here": "你说的话将显示在这里",
+
+  "Voice input": "语音输入",
+  "Phone dictation": "手机听写",
+  "Offline dictation": "离线听写",
+  "Uses your phone’s speech service. It may send audio to its provider.":
+    "使用手机的语音服务，可能会将音频发送给该服务的提供商。",
+  "Keeps audio on your phone. Requires an installed offline speech language.":
+    "音频保留在手机上，需要安装离线语音语言包。",
+  "Sends audio to your configured voice provider for transcription.":
+    "将音频发送给已配置的语音服务提供商以转录为文字。",
+  "Connect a voice provider that supports transcription below.":
+    "请在下方连接支持语音转文字的提供商。",
+  "Could not read the dictation method. Choose it again in Voice settings.":
+    "无法读取听写方式，请在语音设置中重新选择。",
+  "Invalid dictation method.": "听写方式无效。",
+  "Listening… Tap the mic to stop.": "正在聆听…点击麦克风停止。",
+  "Voice settings": "语音设置",
+  "Stop dictation": "停止听写",
 };

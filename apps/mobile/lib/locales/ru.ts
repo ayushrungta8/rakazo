@@ -1057,4 +1057,22 @@ export const RU_MESSAGES: Record<string, string> = {
     "Использует службу речи Android. Она может отправлять аудио своему провайдеру.",
   "Your message": "Ваше сообщение",
   "Your words will appear here": "Ваши слова появятся здесь",
+
+  "Voice input": "Голосовой ввод",
+  "Phone dictation": "Диктовка на телефоне",
+  "Offline dictation": "Диктовка без интернета",
+  "Uses your phone’s speech service. It may send audio to its provider.":
+    "Использует службу распознавания речи телефона. Она может отправлять аудио своему провайдеру.",
+  "Keeps audio on your phone. Requires an installed offline speech language.":
+    "Аудио остаётся на телефоне. Нужна установленная языковая модель для распознавания без интернета.",
+  "Sends audio to your configured voice provider for transcription.":
+    "Отправляет аудио настроенному голосовому провайдеру для распознавания.",
+  "Connect a voice provider that supports transcription below.":
+    "Подключите ниже голосового провайдера с поддержкой распознавания речи.",
+  "Could not read the dictation method. Choose it again in Voice settings.":
+    "Не удалось прочитать способ диктовки. Выберите его заново в настройках голоса.",
+  "Invalid dictation method.": "Недопустимый способ диктовки.",
+  "Listening… Tap the mic to stop.": "Слушаю… Нажмите на микрофон, чтобы остановить.",
+  "Voice settings": "Настройки голоса",
+  "Stop dictation": "Остановить диктовку",
 };
