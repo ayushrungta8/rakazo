@@ -1,4 +1,4 @@
-import { ChatMarkdown } from "@rakazo/chat-ui/native";
+import { ChatMarkdown, ChatScrollGestureContext } from "@rakazo/chat-ui/native";
 import type {
   AgentSkillCatalogEntry,
   Connection,
@@ -66,6 +66,7 @@ import {
   type TextProps,
   View,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { KeyboardAvoidingView, useKeyboardState } from "react-native-keyboard-controller";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -262,6 +263,7 @@ function Thread() {
     messageId?: string;
   }>();
   const inGroup = Boolean(groupId);
+  const chatScrollGesture = useMemo(() => Gesture.Native(), []);
   const scroll = useRef<FlatList<MobileMessage>>(null);
   const pinnedScroll = useRef<ScrollView>(null);
   const scrollBehavior = useRef(new ThreadScrollBehavior());
@@ -1637,109 +1639,116 @@ function Thread() {
       {runError ? (
         <Text style={{ color: tokens.destructive, marginTop: 12 }}>{runError}</Text>
       ) : null}
-      <View style={{ flex: 1, position: "relative" }}>
-        {showPinnedPage ? (
-          <ScrollView
-            key={jumpScrollTarget.current ?? pinnedTarget?.messageId ?? threadKey}
-            ref={pinnedScroll}
-            style={{ flex: 1, marginTop: 8 }}
-            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-          >
-            {loadEarlierControl}
-            {visibleMessages.map((message) => renderMessageRow(message, { enableJump: true }))}
-            {workingFooter}
-          </ScrollView>
-        ) : (
-          <FlatList
-            key={threadKey}
-            ref={scroll}
-            data={liveMessages}
-            inverted
-            keyExtractor={(message) => message.id}
-            extraData={answerableAskMessageId}
-            style={{ flex: 1, marginTop: 8 }}
-            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-            scrollEventThrottle={16}
-            onScrollBeginDrag={() => {
-              userDragging.current = true;
-            }}
-            onScroll={(event) => {
-              if (userDragging.current) updateUserScroll(event);
-            }}
-            onScrollEndDrag={(event) => {
-              updateUserScroll(event);
-              userDragging.current = false;
-            }}
-            onMomentumScrollEnd={updateUserScroll}
-            onLayout={() => performScroll(scrollBehavior.current.onLayout())}
-            onContentSizeChange={() => {
-              if (loadingOlderContent.current) {
-                loadingOlderContent.current = false;
-                return;
-              }
-              const blocked = Boolean(
-                jumpScrollTarget.current ||
-                  (pinnedAroundRef.current &&
-                    ((pinnedAroundRef.current.botId && pinnedAroundRef.current.botId === botId) ||
-                      (pinnedAroundRef.current.groupId &&
-                        pinnedAroundRef.current.groupId === groupId))) ||
-                  expandedHistoryThread.current === snap?.threadId,
-              );
-              performScroll(scrollBehavior.current.onContentChanged(blocked, latestMessageId));
-              setThreadScrollState(scrollBehavior.current.state());
-            }}
-            ListFooterComponent={loadEarlierControl}
-            ListHeaderComponent={workingFooter}
-            renderItem={({ item }) => renderMessageRow(item)}
-          />
-        )}
-        {!showPinnedPage && threadScrollState.detached ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={
-              threadScrollState.unread ? t("Jump to latest, new messages") : t("Jump to latest")
-            }
-            onPress={() => {
-              performScroll(scrollBehavior.current.jumpToLatest());
-              setThreadScrollState(scrollBehavior.current.state());
-            }}
-            style={{
-              position: "absolute",
-              left: "50%",
-              marginLeft: -21,
-              bottom: 12,
-              width: 42,
-              height: 42,
-              borderRadius: 21,
-              borderWidth: 1,
-              borderColor: native.fillPressed,
-              backgroundColor: native.fill,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <NativeSymbol
-              ios="arrow.down"
-              android="arrow-down"
-              size={18}
-              color={tokens.foreground}
-            />
-            {threadScrollState.unread ? (
-              <View
-                style={{
-                  position: "absolute",
-                  top: 3,
-                  right: 3,
-                  width: 8,
-                  height: 8,
-                  borderRadius: 4,
-                  backgroundColor: tokens.primary,
+      <ChatScrollGestureContext.Provider value={chatScrollGesture}>
+        <View style={{ flex: 1, position: "relative" }}>
+          {showPinnedPage ? (
+            <GestureDetector gesture={chatScrollGesture}>
+              <ScrollView
+                key={jumpScrollTarget.current ?? pinnedTarget?.messageId ?? threadKey}
+                ref={pinnedScroll}
+                style={{ flex: 1, marginTop: 8 }}
+                maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+              >
+                {loadEarlierControl}
+                {visibleMessages.map((message) => renderMessageRow(message, { enableJump: true }))}
+                {workingFooter}
+              </ScrollView>
+            </GestureDetector>
+          ) : (
+            <GestureDetector gesture={chatScrollGesture}>
+              <FlatList
+                key={threadKey}
+                ref={scroll}
+                data={liveMessages}
+                inverted
+                keyExtractor={(message) => message.id}
+                extraData={answerableAskMessageId}
+                style={{ flex: 1, marginTop: 8 }}
+                maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+                scrollEventThrottle={16}
+                onScrollBeginDrag={() => {
+                  userDragging.current = true;
                 }}
+                onScroll={(event) => {
+                  if (userDragging.current) updateUserScroll(event);
+                }}
+                onScrollEndDrag={(event) => {
+                  updateUserScroll(event);
+                  userDragging.current = false;
+                }}
+                onMomentumScrollEnd={updateUserScroll}
+                onLayout={() => performScroll(scrollBehavior.current.onLayout())}
+                onContentSizeChange={() => {
+                  if (loadingOlderContent.current) {
+                    loadingOlderContent.current = false;
+                    return;
+                  }
+                  const blocked = Boolean(
+                    jumpScrollTarget.current ||
+                      (pinnedAroundRef.current &&
+                        ((pinnedAroundRef.current.botId &&
+                          pinnedAroundRef.current.botId === botId) ||
+                          (pinnedAroundRef.current.groupId &&
+                            pinnedAroundRef.current.groupId === groupId))) ||
+                      expandedHistoryThread.current === snap?.threadId,
+                  );
+                  performScroll(scrollBehavior.current.onContentChanged(blocked, latestMessageId));
+                  setThreadScrollState(scrollBehavior.current.state());
+                }}
+                ListFooterComponent={loadEarlierControl}
+                ListHeaderComponent={workingFooter}
+                renderItem={({ item }) => renderMessageRow(item)}
               />
-            ) : null}
-          </Pressable>
-        ) : null}
-      </View>
+            </GestureDetector>
+          )}
+          {!showPinnedPage && threadScrollState.detached ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                threadScrollState.unread ? t("Jump to latest, new messages") : t("Jump to latest")
+              }
+              onPress={() => {
+                performScroll(scrollBehavior.current.jumpToLatest());
+                setThreadScrollState(scrollBehavior.current.state());
+              }}
+              style={{
+                position: "absolute",
+                left: "50%",
+                marginLeft: -21,
+                bottom: 12,
+                width: 42,
+                height: 42,
+                borderRadius: 21,
+                borderWidth: 1,
+                borderColor: native.fillPressed,
+                backgroundColor: native.fill,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <NativeSymbol
+                ios="arrow.down"
+                android="arrow-down"
+                size={18}
+                color={tokens.foreground}
+              />
+              {threadScrollState.unread ? (
+                <View
+                  style={{
+                    position: "absolute",
+                    top: 3,
+                    right: 3,
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    backgroundColor: tokens.primary,
+                  }}
+                />
+              ) : null}
+            </Pressable>
+          ) : null}
+        </View>
+      </ChatScrollGestureContext.Provider>
       <View style={{ paddingBottom: keyboardVisible ? 12 : Math.max(insets.bottom + 12, 24) }}>
         {replyTarget ? (
           <View

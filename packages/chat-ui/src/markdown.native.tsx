@@ -6,9 +6,16 @@ import Markdown, {
   type RenderRules,
 } from "@ronradtke/react-native-markdown-display";
 import type { ReactNode } from "react";
-import { memo, useMemo, useState } from "react";
+import { createContext, memo, useContext, useMemo, useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
-import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Linking, Platform, type ScrollView, StyleSheet, Text, View } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  scrollTo,
+  useAnimatedRef,
+  useAnimatedScrollHandler,
+  useSharedValue,
+} from "react-native-reanimated";
 import type { ChatMarkdownProps } from "./markdown";
 import { linkifyExplicitUrls, sanitizeMarkdownUrl } from "./markdown";
 
@@ -129,6 +136,11 @@ async function openSafeLink(url: string) {
 // lets long cell text grow the viewport itself, clipping columns without overflow.
 const TABLE_MIN_COLUMN_WIDTH = 160;
 
+// The chat must wait for the table to classify the drag before scrolling.
+export const ChatScrollGestureContext = createContext<ReturnType<typeof Gesture.Native> | null>(
+  null,
+);
+
 function tableColumnCount(node: ASTNode): number {
   return node.type === "tr"
     ? node.children.length
@@ -148,18 +160,73 @@ function TableScrollView({
   // content floor comes from the measured viewport: narrow tables still fill
   // the bubble while wider rows grow the scrollable content.
   const [viewportWidth, setViewportWidth] = useState(0);
-  return (
-    <ScrollView
+  const parentScroll = useContext(ChatScrollGestureContext);
+  const scroll = useAnimatedRef<ScrollView>();
+  const offset = useSharedValue(0);
+  const startOffset = useSharedValue(0);
+  const touchX = useSharedValue(0);
+  const touchY = useSharedValue(0);
+  const direction = useSharedValue(0);
+  const tableWidth = Math.max(viewportWidth, columns * TABLE_MIN_COLUMN_WIDTH);
+  const maxOffset = Math.max(0, tableWidth - viewportWidth);
+  const horizontalPan = useMemo(() => {
+    const pan = Gesture.Pan()
+      .manualActivation(true)
+      .onTouchesDown((event) => {
+        "worklet";
+        direction.value = 0;
+        touchX.value = event.allTouches[0]?.absoluteX ?? 0;
+        touchY.value = event.allTouches[0]?.absoluteY ?? 0;
+      })
+      .onTouchesMove((event, manager) => {
+        "worklet";
+        if (direction.value !== 0) return;
+        const touch = event.allTouches[0];
+        if (!touch) return;
+        const dx = Math.abs(touch.absoluteX - touchX.value);
+        const dy = Math.abs(touch.absoluteY - touchY.value);
+        if (Math.max(dx, dy) < 6) return;
+        if (dx > dy) {
+          direction.value = 1;
+          manager.activate();
+        } else {
+          direction.value = -1;
+          manager.fail();
+        }
+      })
+      .onStart(() => {
+        "worklet";
+        startOffset.value = offset.value;
+      })
+      .onUpdate((event) => {
+        "worklet";
+        offset.value = Math.max(0, Math.min(maxOffset, startOffset.value - event.translationX));
+        scrollTo(scroll, offset.value, 0, false);
+      });
+    return parentScroll ? pan.blocksExternalGesture(parentScroll) : pan;
+  }, [parentScroll, direction, maxOffset, offset, scroll, startOffset, touchX, touchY]);
+  const onScroll = useAnimatedScrollHandler((event) => {
+    offset.value = event.contentOffset.x;
+  });
+  const content = (
+    <Animated.ScrollView
+      ref={scroll}
       horizontal
+      scrollEnabled={Platform.OS !== "android"}
       nestedScrollEnabled
       showsHorizontalScrollIndicator
       style={[style, layout.tableViewport]}
       onLayout={(event) => setViewportWidth(event.nativeEvent.layout.width)}
+      scrollEventThrottle={16}
+      onScroll={onScroll}
     >
-      <View style={{ width: Math.max(viewportWidth, columns * TABLE_MIN_COLUMN_WIDTH) }}>
-        {children}
-      </View>
-    </ScrollView>
+      <View style={{ width: tableWidth }}>{children}</View>
+    </Animated.ScrollView>
+  );
+  return Platform.OS === "android" ? (
+    <GestureDetector gesture={horizontalPan}>{content}</GestureDetector>
+  ) : (
+    content
   );
 }
 

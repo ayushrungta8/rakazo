@@ -4,7 +4,7 @@
     "slug": "rakazo",
     "owner": "inbox-zero",
     "scheme": "rakazo",
-    "version": "1.0.10",
+    "version": "1.0.14",
     "orientation": "default",
     "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",
@@ -78,7 +78,7 @@
     },
     "android": {
       "package": "com.rakazo.app",
-      "versionCode": 17,
+      "versionCode": 21,
       "softwareKeyboardLayoutMode": "resize",
       "icon": "./assets/icon.png",
       "adaptiveIcon": {

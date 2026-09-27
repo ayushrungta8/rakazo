@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { Platform } from "react-native";
 import { describe, expect, it, vi } from "vitest";
 
 // react-native ships uncompiled Flow source that node cannot load, so tests mock
@@ -22,8 +23,8 @@ vi.mock("react-native", async () => {
       const data: Record<string, unknown> = {};
       for (const key of dataKeys) {
         const value = rest[key] ?? flattened[key];
-        if (value !== undefined && value !== null && value !== false) {
-          data[`data-${kebab(key)}`] = value === true ? "true" : value;
+        if (value !== undefined && value !== null) {
+          data[`data-${kebab(key)}`] = typeof value === "boolean" ? String(value) : value;
         }
       }
       return createElement(tag, { ...rest, ...data }, children as ReactNode);
@@ -37,6 +38,7 @@ vi.mock("react-native", async () => {
       "width",
       "nestedScrollEnabled",
       "showsHorizontalScrollIndicator",
+      "scrollEnabled",
     ]),
     Pressable: mockComponent("rn-pressable", ["accessibilityRole"]),
     TextInput: mockComponent("rn-text-input"),
@@ -71,6 +73,27 @@ vi.mock("react-native", async () => {
 
 import { ChatMarkdown } from "./markdown.native";
 
+vi.mock("react-native-gesture-handler", async () => {
+  const { createElement } = await import("react");
+  const pan: Record<string, unknown> = {};
+  for (const method of [
+    "manualActivation",
+    "blocksExternalGesture",
+    "onTouchesDown",
+    "onTouchesMove",
+    "onStart",
+    "onUpdate",
+    "onFinalize",
+  ]) {
+    pan[method] = () => pan;
+  }
+  return {
+    Gesture: { Pan: () => pan },
+    GestureDetector: ({ children }: { children: ReactNode }) =>
+      createElement("rn-gesture-detector", {}, children),
+  };
+});
+
 const THREE_COLUMN_TABLE = `| Name | Status | Detail |
 | --- | --- | --- |
 | Alice | done | [docs](https://docs.example.test) |
@@ -81,6 +104,16 @@ const SIX_COLUMN_TABLE = `| A | B | C | D | E | F |
 | 1 | 2 | 3 | 4 | 5 | 6 |`;
 
 describe("native markdown tables", () => {
+  it("routes Android table dragging through the pan detector instead of native scroll interception", () => {
+    Platform.OS = "android";
+    try {
+      const html = renderToStaticMarkup(<ChatMarkdown>{THREE_COLUMN_TABLE}</ChatMarkdown>);
+      expect(html).toContain("<rn-gesture-detector");
+      expect(html).toContain('data-scroll-enabled="false"');
+    } finally {
+      Platform.OS = "ios";
+    }
+  });
   it("wraps the table in a horizontal scroll view", () => {
     const html = renderToStaticMarkup(<ChatMarkdown>{THREE_COLUMN_TABLE}</ChatMarkdown>);
     expect(html).toContain("<rn-scroll-view");
@@ -113,4 +146,15 @@ describe("native markdown tables", () => {
     expect(html).toContain("<rn-scroll-view");
     expect(html).toContain('data-width="960"');
   });
+});
+
+vi.mock("react-native-reanimated", async () => {
+  const { ScrollView } = await import("react-native");
+  return {
+    default: { ScrollView },
+    useAnimatedRef: () => ({ current: null }),
+    useSharedValue: (value: number) => ({ value }),
+    useAnimatedScrollHandler: (handler: unknown) => handler,
+    scrollTo: vi.fn(),
+  };
 });
