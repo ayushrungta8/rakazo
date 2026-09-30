@@ -361,6 +361,13 @@ function Thread() {
   const [replyTarget, setReplyTarget] = useState<MobileMessage | null>(null);
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const sendInFlight = useRef(false);
+  const [outgoing, setOutgoing] = useState<{
+    threadKey: string;
+    text: string;
+    attachmentNames: string[];
+    seq?: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownArtifactPreviewTarget | null>(
@@ -376,6 +383,13 @@ function Thread() {
     [snap?.messages],
   );
   const visibleMessages = reactionView.visibleMessages;
+  useEffect(() => {
+    if (
+      outgoing?.seq !== undefined &&
+      snap?.messages.some((message) => message.role === "user" && message.seq === outgoing.seq)
+    )
+      setOutgoing(null);
+  }, [outgoing, snap?.messages]);
   const latestMessageId = visibleMessages.at(-1)?.id ?? null;
   const activePendingAttachments = attachmentsForThread(pendingAttachments, threadKey);
   const composerMentionTargets = useMemo(
@@ -1065,6 +1079,7 @@ function Thread() {
   }, [botId, groupId, messageId]);
 
   useEffect(() => {
+    setOutgoing(null);
     setPendingAttachments((current) => attachmentsForThread(current, threadKey));
     setDraft("");
     setMentionQuery(null);
@@ -1138,7 +1153,7 @@ function Thread() {
   async function send() {
     const initialBotTarget = botId;
     const initialGroupTarget = groupId;
-    if ((!initialBotTarget && !initialGroupTarget) || sending) return;
+    if ((!initialBotTarget && !initialGroupTarget) || sending || sendInFlight.current) return;
     const originThreadKey = initialGroupTarget ?? initialBotTarget;
     const attachments = attachmentsForThread(pendingAttachments, originThreadKey);
     const plan = resolveComposerSendPlan({
@@ -1158,8 +1173,32 @@ function Thread() {
       // Covers group-mention reroute while the bot thread stays mounted underneath.
       if (initialBotTarget) cancelFocusPrompt(initialBotTarget);
     };
+    const submittedDraft = draft;
+    const submittedSkill = selectedSkill;
+    const submittedMentions = selectedMentions;
+    const submittedReply = replyTarget;
+    const submittedNotice = attachmentNotice;
+    const clearOriginComposer = () => {
+      const attachmentIds = new Set(attachments.map((attachment) => attachment.id));
+      setPendingAttachments((current) => current.filter((item) => !attachmentIds.has(item.id)));
+      setDraft("");
+      setMentionQuery(null);
+      setSlashQuery(null);
+      setSelectedSkill(null);
+      setSelectedMentions([]);
+      setReplyTarget(null);
+      setAttachmentNotice(null);
+    };
+    sendInFlight.current = true;
     setSending(true);
     setError(null);
+    clearOriginComposer();
+    setOutgoing({
+      threadKey: originThreadKey!,
+      text: trimmed,
+      attachmentNames: attachments.map((attachment) => attachment.name),
+    });
+    let accepted = false;
     try {
       if (plan.shouldRunRoutines) {
         const sendNonce = newClientNonce();
@@ -1172,21 +1211,10 @@ function Thread() {
           ),
         );
       }
-      const clearOriginComposer = () => {
-        setPendingAttachments((current) =>
-          current.filter((attachment) => attachment.threadKey !== originThreadKey),
-        );
-        setDraft("");
-        setMentionQuery(null);
-        setSlashQuery(null);
-        setSelectedSkill(null);
-        setSelectedMentions([]);
-        setReplyTarget(null);
-        setAttachmentNotice(null);
-      };
       if (!plan.shouldSend) {
         dropDelayedSetup();
-        clearOriginComposer();
+        accepted = true;
+        setOutgoing(null);
         if (reroutedToGroup && groupTarget) {
           router.push({
             pathname: "/group-thread",
@@ -1213,7 +1241,7 @@ function Thread() {
         artifactIds.push(artifact.id);
       }
       const clientNonce = newClientNonce();
-      await rpc(
+      const sent = await rpc<{ seq: number }>(
         "threads/send",
         groupTarget
           ? {
@@ -1222,7 +1250,7 @@ function Thread() {
               text: trimmed || undefined,
               mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
               artifactIds: artifactIds.length ? artifactIds : undefined,
-              replyToMessageId: reroutedToGroup ? undefined : replyTarget?.id,
+              replyToMessageId: reroutedToGroup ? undefined : submittedReply?.id,
             }
           : {
               botId: botTarget!,
@@ -1230,14 +1258,15 @@ function Thread() {
               text: trimmed || undefined,
               mentions: plan.mentionPayload.length ? plan.mentionPayload : undefined,
               artifactIds: artifactIds.length ? artifactIds : undefined,
-              replyToMessageId: replyTarget?.id,
+              replyToMessageId: submittedReply?.id,
             },
       );
+      accepted = true;
+      setOutgoing((current) => (current ? { ...current, seq: sent.seq } : null));
       dropDelayedSetup();
       void loadSessionToken()
         .then((token) => resumeLiveNotifications(currentApiBase(), token, selectedSpaceId() ?? ""))
         .catch(() => undefined);
-      clearOriginComposer();
       if (reroutedToGroup && groupTarget) {
         router.push({
           pathname: "/group-thread",
@@ -1252,12 +1281,32 @@ function Thread() {
         await refresh();
       }
     } catch (err) {
-      if (reroutedToGroup && groupTarget) {
-        setError(err instanceof Error ? err.message : t("Failed to send message"));
-      } else if (isCurrentTarget(botTarget, groupTarget)) {
+      if (isCurrentTarget(initialBotTarget, initialGroupTarget)) {
+        if (!accepted) {
+          // Keep anything typed or attached while the request was in flight.
+          setDraft((current) => (current ? `${submittedDraft}\n${current}` : submittedDraft));
+          setSelectedSkill((current) => current ?? submittedSkill);
+          setSelectedMentions((current) => [
+            ...submittedMentions,
+            ...current.filter(
+              (item) =>
+                !submittedMentions.some(
+                  (submitted) => mentionChipKey(submitted) === mentionChipKey(item),
+                ),
+            ),
+          ]);
+          setPendingAttachments((current) => [
+            ...attachments,
+            ...current.filter((item) => !attachments.some((submitted) => submitted.id === item.id)),
+          ]);
+          setReplyTarget((current) => current ?? submittedReply);
+          setAttachmentNotice((current) => current ?? submittedNotice);
+          setOutgoing(null);
+        }
         setError(err instanceof Error ? err.message : t("Failed to send message"));
       }
     } finally {
+      sendInFlight.current = false;
       setSending(false);
     }
   }
@@ -1584,6 +1633,41 @@ function Thread() {
     );
   }
 
+  const outgoingFooter =
+    outgoing &&
+    outgoing.threadKey === threadKey &&
+    !visibleMessages.some(
+      (message) => outgoing.seq !== undefined && message.seq === outgoing.seq,
+    ) ? (
+      <View style={{ alignItems: "flex-end", marginTop: 12 }}>
+        <View
+          style={{
+            maxWidth: "90%",
+            borderRadius: 20,
+            backgroundColor: tokens.secondary,
+            paddingHorizontal: 14,
+            paddingVertical: 12,
+            gap: 8,
+          }}
+        >
+          {outgoing.text ? (
+            <Text style={{ color: tokens.secondaryForeground }}>{outgoing.text}</Text>
+          ) : null}
+          {outgoing.attachmentNames.map((name, index) => (
+            <Text key={`${index}:${name}`} style={{ color: tokens.secondaryForeground }}>
+              {name}
+            </Text>
+          ))}
+          {outgoing.seq === undefined ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <ActivityIndicator size="small" color={tokens.mutedForeground} />
+              <Text style={{ color: tokens.mutedForeground, fontSize: 12 }}>{t("Sending…")}</Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    ) : null;
+
   const workingFooter =
     !inGroup && currentBot && isWorkingStatus(currentBotStatus) && !hasLiveProgress ? (
       <View
@@ -1673,6 +1757,7 @@ function Thread() {
               >
                 {loadEarlierControl}
                 {visibleMessages.map((message) => renderMessageRow(message, { enableJump: true }))}
+                {outgoingFooter}
                 {workingFooter}
               </ScrollView>
             </GestureDetector>
@@ -1718,7 +1803,12 @@ function Thread() {
                   setThreadScrollState(scrollBehavior.current.state());
                 }}
                 ListFooterComponent={loadEarlierControl}
-                ListHeaderComponent={workingFooter}
+                ListHeaderComponent={
+                  <>
+                    {outgoingFooter}
+                    {workingFooter}
+                  </>
+                }
                 renderItem={({ item }) => renderMessageRow(item)}
               />
             </GestureDetector>
