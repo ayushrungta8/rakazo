@@ -6,6 +6,8 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 export interface ModelEmulatorRequest {
   model: string;
   stream: boolean;
+  max_completion_tokens?: number;
+  max_tokens?: number;
   messages: Array<{
     role: string;
     content?: unknown;
@@ -32,6 +34,7 @@ export type ModelEmulatorResponse =
 export interface ModelEmulatorStep {
   /** Assertions run before the response; failures also make assertComplete fail. */
   expect: (request: ModelEmulatorRequest) => void | Promise<void>;
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
   response: ModelEmulatorResponse | ((request: ModelEmulatorRequest) => ModelEmulatorResponse);
 }
 
@@ -122,6 +125,9 @@ export async function startModelEmulator(options: {
           return;
         }
         emit({}, "stop");
+      }
+      if (step.usage) {
+        response.write(`data: ${JSON.stringify({ choices: [], usage: step.usage })}\n\n`);
       }
       response.end("data: [DONE]\n\n");
     })().catch((error: unknown) => {

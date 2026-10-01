@@ -50,6 +50,94 @@ function latestToolResult(request: ModelEmulatorRequest) {
 }
 
 describe("real Pi against an offline model HTTP endpoint", () => {
+  it("compacts between tool rounds at the one-token boundary and executes each action once", async () => {
+    const calls: string[] = [];
+    const outputBudget = (request: ModelEmulatorRequest) => {
+      expect(request.max_completion_tokens ?? request.max_tokens).toBe(4_096);
+    };
+    const summaryStep = {
+      expect(request: ModelEmulatorRequest) {
+        outputBudget(request);
+        expect(request.tools ?? []).toHaveLength(0);
+        expect(JSON.stringify(request.messages)).toContain("Earlier facts");
+      },
+      response: {
+        type: "text" as const,
+        text: "Earlier facts: summarize mail without sending it. Earlier reads completed; retain their findings. Do not repeat completed actions.",
+      },
+    };
+    const server = await startModelEmulator({
+      steps: [
+        {
+          expect: outputBudget,
+          response: {
+            type: "tool",
+            id: "read-1",
+            name: "write_file",
+            arguments: { path: "notes.txt", content: "first" },
+          },
+          usage: { prompt_tokens: 25_160, completion_tokens: 985, total_tokens: 26_145 },
+        },
+        summaryStep,
+        {
+          expect(request) {
+            outputBudget(request);
+            expect(latestToolResult(request)?.tool_call_id).toBe("read-1");
+            expect(String(latestToolResult(request)?.content)).toHaveLength(12_001);
+            expect(request.messages.some((m) => m.tool_calls?.some((t) => t.id === "read-1"))).toBe(
+              true,
+            );
+          },
+          response: {
+            type: "tool",
+            id: "read-2",
+            name: "write_file",
+            arguments: { path: "notes.txt", content: "second" },
+          },
+          usage: { prompt_tokens: 25_160, completion_tokens: 985, total_tokens: 26_145 },
+        },
+        summaryStep,
+        {
+          expect(request) {
+            outputBudget(request);
+            expect(latestToolResult(request)?.tool_call_id).toBe("read-2");
+            expect(request.messages.some((m) => m.tool_calls?.some((t) => t.id === "read-2"))).toBe(
+              true,
+            );
+          },
+          response: { type: "text", text: "Both steps completed; here is the summary." },
+        },
+      ],
+    });
+    cleanups.push(() => server.close());
+    const events = await collect(
+      new PiAgentRuntime().run(
+        runRequest(
+          { ...server.model, contextWindow: 32_768, maxTokens: 4_096 },
+          {
+            history: [{ role: "user", content: "Earlier facts. ".repeat(4_000) }],
+            async executeTool(_name, _args, id) {
+              calls.push(String(id));
+              return {
+                kind: "agent_tool_result",
+                content: [{ type: "text", text: "x".repeat(12_100) }],
+              };
+            },
+          },
+        ),
+      ),
+    );
+    server.assertComplete();
+    expect(calls).toEqual(["read-1", "read-2"]);
+    expect(events.at(-1)).toEqual({
+      type: "done",
+      text: "Both steps completed; here is the summary.",
+    });
+    expect(
+      events.filter((event) => event.type === "progress" && event.text === "Compacting context…"),
+    ).toHaveLength(2);
+  });
+
   it("assembles fragmented tool arguments, executes the write, and sends its result back", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "rakazo-pi-offline-"));
     cleanups.push(() => rm(dir, { recursive: true, force: true }));

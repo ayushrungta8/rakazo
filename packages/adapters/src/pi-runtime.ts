@@ -41,6 +41,7 @@ import {
   registerOpenAiCompatibleCatalog,
   registerOpenAiCompatibleRuntime,
 } from "./pi-openai-compatible-provider.js";
+import { compactRuntimeContext } from "./pi-runtime-compaction.js";
 import {
   billedPromptTokens,
   clipToolResultContent,
@@ -263,6 +264,45 @@ export class PiAgentRuntime implements AgentRuntime {
           streamFn: (m, ctx, options) =>
             models.streamSimple(m, ctx, reliableStreamOptions(m, options, request.model.maxTokens)),
           getApiKey: async () => apiKey,
+          prepareRequest: async ({ context: agentContext }, requestSignal) => ({
+            context: {
+              ...agentContext,
+              messages: await compactRuntimeContext(
+                pruneComputerScreenshotContext(
+                  pruneStalePageStateContext(agentContext.messages),
+                  request.model.maxImagesPerPrompt,
+                ),
+                {
+                  models,
+                  model: completionModel,
+                  apiKey,
+                  streamOptions: reliableStreamOptions(
+                    completionModel,
+                    { sessionId: conversationSessionId(request.threadId, request.botId) },
+                    request.model.maxTokens,
+                  ),
+                  signal: requestSignal,
+                  onStart: () =>
+                    queue.push({ type: "progress", text: "Compacting context…", activity: true }),
+                  onUsage: (usage) =>
+                    queue.push({
+                      type: "usage",
+                      ...usage,
+                      provider: model.provider,
+                      model: model.id,
+                    }),
+                  onComplete: (before, after) => {
+                    queue.push({ type: "progress", text: "", activity: true });
+                    getLogger().info("Pi context compacted", {
+                      runId: request.runId,
+                      before,
+                      after,
+                    });
+                  },
+                },
+              ),
+            },
+          }),
           transformContext: async (messages) =>
             pruneComputerScreenshotContext(
               pruneStalePageStateContext(messages),
@@ -1100,6 +1140,41 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
         reliableStreamOptions(m, options, requestModel.maxTokens),
       ),
     getApiKey: async () => selectedModel.apiKey,
+    prepareRequest: async ({ context: agentContext }, requestSignal) => ({
+      context: {
+        ...agentContext,
+        messages: await compactRuntimeContext(
+          pruneComputerScreenshotContext(
+            pruneStalePageStateContext(agentContext.messages),
+            requestModel.maxImagesPerPrompt,
+          ),
+          {
+            models: selectedModel.models,
+            model: subagentModel,
+            apiKey: selectedModel.apiKey,
+            streamOptions: reliableStreamOptions(
+              subagentModel,
+              {
+                sessionId: conversationSessionId(
+                  host.request.threadId,
+                  host.request.botId,
+                  agentId,
+                ),
+              },
+              requestModel.maxTokens,
+            ),
+            signal: requestSignal,
+            onUsage: (usage) =>
+              host.queue.push({
+                type: "usage",
+                ...usage,
+                provider: subagentModel.provider,
+                model: subagentModel.id,
+              }),
+          },
+        ),
+      },
+    }),
     transformContext: async (messages) =>
       pruneComputerScreenshotContext(
         pruneStalePageStateContext(messages),
