@@ -350,15 +350,15 @@ describe("inbound wake prompt", () => {
     expect(prompt).toContain("untrusted peer content");
   });
 
-  it("requires a received result to be surfaced to the user", () => {
+  it("keeps ownership while allowing the standing role to consolidate results", () => {
     const resultPrompt = buildBotMessageWakePrompt({
       from: { id: "b_1", name: "Researcher" },
       text: "The answer is 42.",
       intent: "result",
     });
-    expect(resultPrompt).toContain("Relay it to the user now");
-    expect(resultPrompt).toContain("include the actual substance");
-    expect(resultPrompt).not.toContain("staying silent is fine");
+    expect(resultPrompt).toContain("primary assistant consolidates");
+    expect(resultPrompt).toContain("Include the actual substance");
+    expect(resultPrompt).toContain("never lose an outstanding request");
   });
 
   it("keeps silence available only for an explicit FYI", () => {

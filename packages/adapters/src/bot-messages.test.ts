@@ -5,6 +5,7 @@ import {
   loadBotMessageContext,
   messageBot,
   returnBotMessageOutcome,
+  returnCoordinatedRoutineOutcome,
 } from "./bot-messages.js";
 import type { ExecutorDeps } from "./executor.js";
 
@@ -130,7 +131,7 @@ describe("messaging another bot", () => {
       harness.tx.thread.update.mock.calls.filter(
         ([call]) => (call as { data?: { unread?: boolean } }).data?.unread,
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(0);
     expect(harness.enqueue).toHaveBeenCalledTimes(1);
   });
 
@@ -650,5 +651,53 @@ describe("automatic outcome return", () => {
     expect(returned).toBe(true);
     expect(harness.enqueue).not.toHaveBeenCalled();
     expect(harness.deps.prisma.run.updateMany).toHaveBeenCalled();
+  });
+});
+
+describe("scheduled specialist delivery", () => {
+  it("routes a terminal briefing to the coordinator as FYI without unread chatter", async () => {
+    const harness = deps();
+    expect(
+      await returnCoordinatedRoutineOutcome(
+        harness.deps,
+        run,
+        sender,
+        "bot-target",
+        "A useful discovery",
+      ),
+    ).toBe(true);
+    expect(harness.tx.task.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ botId: "bot-target" }) }),
+    );
+    expect(harness.tx.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ clientNonce: "bot-message:routine-outcome:run-1" }),
+      }),
+    );
+    expect(harness.tx.thread.update.mock.calls.some(([args]) => args.data?.unread === true)).toBe(
+      false,
+    );
+  });
+  it("does not duplicate a briefing explicitly delivered during the run", async () => {
+    const harness = deps();
+    vi.mocked(harness.deps.prisma.message.findMany).mockResolvedValueOnce([
+      { blocks: [{ kind: "bot_message_sent", toBotId: "bot-target", intent: "fyi" }] },
+    ] as never);
+    expect(
+      await returnCoordinatedRoutineOutcome(
+        harness.deps,
+        run,
+        sender,
+        "bot-target",
+        "A useful discovery",
+      ),
+    ).toBe(true);
+    expect(harness.enqueue).not.toHaveBeenCalled();
+  });
+  it("does not wake anyone for a silent scan or an independent bot", async () => {
+    const harness = deps();
+    await returnCoordinatedRoutineOutcome(harness.deps, run, sender, "bot-target", "");
+    await returnCoordinatedRoutineOutcome(harness.deps, run, sender, null, "Discovery");
+    expect(harness.enqueue).not.toHaveBeenCalled();
   });
 });

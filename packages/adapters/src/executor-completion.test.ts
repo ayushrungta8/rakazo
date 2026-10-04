@@ -4,6 +4,7 @@ import {
   completionMessageSegments,
   completionNotificationBody,
   completionNotificationPreview,
+  isDelegatedBotRequest,
   isExactNoResponse,
   LONG_WORK_PROGRESS_GUIDANCE,
   mayOpenModelStream,
@@ -284,5 +285,63 @@ describe("subagentMarksUnread", () => {
     expect(subagentMarksUnread("routine", "completed")).toBe(false);
     expect(subagentMarksUnread("routine", "failed")).toBe(true);
     expect(subagentMarksUnread("user", "completed")).toBe(true);
+  });
+});
+
+describe("quiet delegated work", () => {
+  it("keeps specialist requests inspectable without completion alerts or unread badges", () => {
+    for (const intent of [undefined, "request", "question"]) {
+      const peer = { intent };
+      expect(isDelegatedBotRequest("bot_message", peer)).toBe(true);
+      expect(runSendsFinishNotification("bot_message", peer)).toBe(false);
+      expect(completionMarksUnread("bot_message", "Verified result", peer)).toBe(false);
+    }
+  });
+
+  it("preserves coordinator results and genuine questions returning to an owner", () => {
+    for (const intent of ["result", "status", "fyi", "question"]) {
+      const peer = { intent, repliesToRequest: true };
+      expect(isDelegatedBotRequest("bot_message", peer)).toBe(false);
+      expect(runSendsFinishNotification("bot_message", peer)).toBe(true);
+      expect(completionMarksUnread("bot_message", "Useful answer", peer)).toBe(true);
+    }
+  });
+
+  it("keeps helper results to a specialist quiet while Chief can announce a result", () => {
+    const peer = { intent: "result", repliesToRequest: true };
+    expect(runSendsFinishNotification("bot_message", peer, true)).toBe(false);
+    expect(completionMarksUnread("bot_message", "Helper result", peer, true)).toBe(false);
+    expect(runSendsFinishNotification("bot_message", peer, false)).toBe(true);
+  });
+
+  it("preserves direct specialist conversations", () => {
+    expect(runSendsFinishNotification("user")).toBe(true);
+    expect(completionMarksUnread("user", "Direct answer")).toBe(true);
+  });
+});
+
+describe("coordination delivery guidance", () => {
+  it("keeps incoming requests accountable while allowing quiet duplicate results", () => {
+    expect(runAllowsSilentEmpty("bot_message", { intent: "request" })).toBe(false);
+    expect(runAllowsSilentEmpty("bot_message", { intent: "result" })).toBe(true);
+    expect(runAllowsSilentEmpty("bot_message", { intent: "fyi" })).toBe(true);
+    expect(runReplyGuidance("bot_message", { intent: "request" })).toContain(
+      "automatically returned",
+    );
+    expect(runReplyGuidance("bot_message", { intent: "result" })).toContain(
+      `exactly ${NO_RESPONSE}`,
+    );
+    expect(runPromotesMidTurnNarration("bot_message")).toBe(false);
+    expect(completionMarksUnread("bot_message", "", { intent: "result" })).toBe(false);
+    expect(subagentMarksUnread("bot_message", "failed")).toBe(false);
+  });
+});
+
+describe("coordinated routine attention", () => {
+  it("keeps specialist scheduled results and failures quiet while Chief can notify", () => {
+    expect(runSendsFinishNotification("routine", undefined, true)).toBe(false);
+    expect(completionMarksUnread("routine", "A useful discovery", undefined, true)).toBe(false);
+    expect(runSendsFinishNotification("routine", undefined, false)).toBe(true);
+    expect(completionMarksUnread("routine", "A useful discovery", undefined, false)).toBe(true);
   });
 });

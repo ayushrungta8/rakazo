@@ -210,6 +210,7 @@ export async function messageBot(
           blocks: [outboundBlock],
           botId: run.botId,
           runId: run.id,
+          markUnread: false,
         });
         const inboundBlock: MessageBlock = {
           kind: "bot_message_received",
@@ -220,7 +221,7 @@ export async function messageBot(
           intent,
           returnToMessageId: outbound.id,
         };
-        // This is the recipient's prompt, but it is still unread peer activity.
+        // Peer envelopes are inspectable coordination, not user-facing alerts.
         const inbound = await createThreadMessageInTransaction(tx, {
           threadId: targetThreadId,
           role: "user",
@@ -230,7 +231,7 @@ export async function messageBot(
               ? sourceContext.returnToMessageId
               : undefined,
           clientNonce: deliveryKey,
-          markUnread: true,
+          markUnread: false,
         });
         const task = await tx.task.create({
           data: {
@@ -372,6 +373,46 @@ export async function returnBotMessageOutcome(
     { allowTerminalSource: true },
   );
   if (outcome.ok) await markBotOutcomeReturned(deps.prisma, run.id);
+  return outcome.ok;
+}
+
+/** Keep scheduled specialist findings on the coordinator's delivery path. */
+export async function returnCoordinatedRoutineOutcome(
+  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
+  run: Parameters<typeof returnBotMessageOutcome>[1],
+  sender: { id: string; name: string },
+  coordinatorId: string | null,
+  text: string,
+) {
+  if (!coordinatorId || !text.trim()) return true;
+  const sent = await deps.prisma.message.findMany({
+    where: { threadId: run.threadId, runId: run.id },
+    select: { blocks: true },
+  });
+  // The specialist may already have explicitly routed the same briefing.
+  if (
+    sent.some((message) =>
+      (Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : []).some(
+        (block) =>
+          block.kind === "bot_message_sent" &&
+          block.toBotId === coordinatorId &&
+          (block.intent === "fyi" || block.intent === "result"),
+      ),
+    )
+  )
+    return true;
+  const outcome = await messageBot(
+    deps,
+    run,
+    sender,
+    {
+      bot_id: coordinatorId,
+      message: clampBotMessage(text),
+      intent: "fyi",
+      deliveryKey: `routine-outcome:${run.id}`,
+    },
+    { allowTerminalSource: true },
+  );
   return outcome.ok;
 }
 

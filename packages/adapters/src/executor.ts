@@ -150,7 +150,12 @@ import {
 } from "./auto-review.js";
 import { createAutoReviewProvider } from "./auto-review-factory.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
-import { loadBotMessageContext, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
+import {
+  loadBotMessageContext,
+  messageBot,
+  returnBotMessageOutcome,
+  returnCoordinatedRoutineOutcome,
+} from "./bot-messages.js";
 import {
   allowPrivateHttpSecretOrigins,
   findBotSecret,
@@ -1371,7 +1376,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           peerMessage?.repliesToRequest,
         );
         const allowSilentEmptyRun =
-          allowSilentPeerMessage || messagingChannelRun || runAllowsSilentEmpty(run.trigger);
+          allowSilentPeerMessage ||
+          messagingChannelRun ||
+          runAllowsSilentEmpty(run.trigger, peerMessage);
         const emptyResponseText = peerMessage
           ? peerMessage.intent === "result" ||
             peerMessage.intent === "status" ||
@@ -1457,6 +1464,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
             error: message,
           });
           if (!failed) return;
+          if (run.trigger === "routine") {
+            await returnCoordinatedRoutineOutcome(
+              deps,
+              run,
+              bot,
+              bot.parentBotId,
+              `Scheduled work failed: ${message}`,
+            ).catch((error) => getLogger().error("routine coordinator delivery", error));
+          }
           if (failed.continuationRunId) {
             await deps.jobs
               .enqueue(runContinueJob(failed.continuationRunId))
@@ -3783,7 +3799,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 pluginLine,
                 agentSkillsLine,
                 taughtSkillsLine,
-                replyGuidance: runReplyGuidance(run.trigger),
+                replyGuidance: runReplyGuidance(run.trigger, peerMessage),
               })
                 .filter((instruction): instruction is string => Boolean(instruction))
                 .join("\n\n"),
@@ -4087,8 +4103,23 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   leaseFence: fence,
                   outcome: "completed",
                   blocks: [{ kind: "text", text: stuckText }],
+                  markUnread: completionMarksUnread(
+                    run.trigger,
+                    stuckText,
+                    peerMessage,
+                    Boolean(bot.parentBotId),
+                  ),
                 });
                 if (!stopped) return;
+                if (run.trigger === "routine") {
+                  await returnCoordinatedRoutineOutcome(
+                    deps,
+                    run,
+                    bot,
+                    bot.parentBotId,
+                    stuckText,
+                  ).catch((error) => getLogger().error("routine coordinator delivery", error));
+                }
                 if (stopped.continuationRunId) {
                   await deps.jobs
                     .enqueue(runContinueJob(stopped.continuationRunId))
@@ -4262,9 +4293,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
           terminalCheckpointComplete = true;
 
           flushPendingTools();
-          // Only routine runs are instructed to emit NO_RESPONSE. Other
-          // allowSilentEmpty wakes (FYI, messaging) may finish truly empty.
-          const silentReply = runAllowsSilentEmpty(run.trigger)
+          // Routines and non-request peer updates may finish silently. Internal
+          // requests still need an explicit result returned to their owner.
+          const silentReply = runAllowsSilentEmpty(run.trigger, peerMessage)
             ? stripNoResponseReply(assembled, messageSegments)
             : { assembled, blocks: messageSegments };
           let completionBlocks = silentReply.blocks;
@@ -4285,7 +4316,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             ? []
             : finalBlocksAfterMidTurnProgress(
                 redactBlocks(completionBlocks, runSecrets),
-                publishedMidTurnUserMessage || runAllowsSilentEmpty(run.trigger),
+                publishedMidTurnUserMessage || runAllowsSilentEmpty(run.trigger, peerMessage),
               );
           const text = handedOff
             ? ""
@@ -4309,9 +4340,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
             leaseFence: fence,
             outcome: "completed",
             blocks,
-            markUnread: completionMarksUnread(run.trigger, text),
+            markUnread: completionMarksUnread(
+              run.trigger,
+              text,
+              peerMessage,
+              Boolean(bot.parentBotId),
+            ),
           });
           if (!completed) return;
+          if (run.trigger === "routine") {
+            await returnCoordinatedRoutineOutcome(deps, run, bot, bot.parentBotId, text).catch(
+              (error) => getLogger().error("routine coordinator delivery", error),
+            );
+          }
           if (completed.continuationRunId) {
             await deps.jobs
               .enqueue(runContinueJob(completed.continuationRunId))
@@ -4332,7 +4373,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           const notifyBody = completionNotificationPreview(text);
           if (
-            runSendsFinishNotification(run.trigger) &&
+            runSendsFinishNotification(run.trigger, peerMessage, Boolean(bot.parentBotId)) &&
             notifyBody &&
             !completed.continuationRunId
           ) {
@@ -4389,6 +4430,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
             error: message,
           });
           if (!failed) return;
+          if (run.trigger === "routine") {
+            await returnCoordinatedRoutineOutcome(
+              deps,
+              run,
+              bot,
+              bot.parentBotId,
+              `Scheduled work failed: ${message}`,
+            ).catch((error) => getLogger().error("routine coordinator delivery", error));
+          }
           if (failed.continuationRunId) {
             await deps.jobs
               .enqueue(runContinueJob(failed.continuationRunId))
@@ -4403,7 +4453,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               "status",
             ).catch((returnError) => getLogger().error("bot message failure return", returnError));
           }
-          if (runSendsFinishNotification(run.trigger) && !failed.continuationRunId) {
+          if (
+            runSendsFinishNotification(run.trigger, peerMessage, Boolean(bot.parentBotId)) &&
+            !failed.continuationRunId
+          ) {
             await notifyRun(deps, run, {
               kind: "failure",
               title: `${bot.name} failed`,
@@ -4576,10 +4629,32 @@ export async function runNotificationsEnabled(
 
 async function notifyRun(
   deps: ExecutorDeps,
-  run: { spaceId: string; userId: string; botId: string; threadId: string },
+  run: {
+    spaceId: string;
+    userId: string;
+    botId: string;
+    threadId: string;
+    trigger?: string;
+    sourceMessageId?: string | null;
+  },
   message: NotificationMessage,
 ) {
   if (!deps.notifications) return;
+  // Delegated completion/failure is returned to the requesting bot. Approval
+  // and takeover still require the user's attention in the originating chat.
+  if (
+    (run.trigger === "bot_message" || run.trigger === "routine") &&
+    (message.kind === "completion" || message.kind === "failure")
+  ) {
+    const [peer, bot] = await Promise.all([
+      loadBotMessageContext(deps.prisma, run.sourceMessageId),
+      deps.prisma.bot.findFirst({
+        where: { id: run.botId, spaceId: run.spaceId, userId: run.userId },
+        select: { parentBotId: true },
+      }),
+    ]);
+    if (!runSendsFinishNotification(run.trigger, peer, Boolean(bot?.parentBotId))) return;
+  }
   const enabled = await runNotificationsEnabled(deps.prisma, run).catch((error) => {
     getLogger().error("notification preference lookup", error);
     return false;
@@ -4756,8 +4831,26 @@ export function runIdentityInstruction(
   ].join("\n");
 }
 
-export function runSendsFinishNotification(trigger: string): boolean {
-  return trigger !== "created";
+type PeerDelivery = { intent?: string; repliesToRequest?: boolean };
+
+export function isDelegatedBotRequest(trigger: string, peer?: PeerDelivery): boolean {
+  return (
+    trigger === "bot_message" &&
+    !peer?.repliesToRequest &&
+    (peer?.intent === undefined || peer.intent === "request" || peer.intent === "question")
+  );
+}
+
+export function runSendsFinishNotification(
+  trigger: string,
+  peer?: PeerDelivery,
+  hasCoordinator = false,
+): boolean {
+  return (
+    trigger !== "created" &&
+    !((trigger === "bot_message" || trigger === "routine") && hasCoordinator) &&
+    !isDelegatedBotRequest(trigger, peer)
+  );
 }
 
 /** Open the model only while this worker still owns the running lease. */
@@ -4779,15 +4872,22 @@ export const LONG_WORK_PROGRESS_GUIDANCE =
 
 export const ROUTINE_SILENT_REPLY_GUIDANCE = `If this routine's prompt says to stay silent when there is nothing to report, the entire final assistant reply must be exactly ${NO_RESPONSE} — no surrounding prose, no variants, no progress updates, no all-clear, and no meta note that you are staying silent. Do not call message_user unless you have something to report.`;
 
-export function runAllowsSilentEmpty(trigger: string): boolean {
-  return trigger === "routine";
+export function runAllowsSilentEmpty(trigger: string, peer?: PeerDelivery): boolean {
+  return (
+    trigger === "routine" || (trigger === "bot_message" && !isDelegatedBotRequest(trigger, peer))
+  );
 }
 
 export function runPromotesMidTurnNarration(trigger: string): boolean {
-  return trigger !== "routine";
+  return trigger !== "routine" && trigger !== "bot_message";
 }
 
-export function runReplyGuidance(trigger: string): string {
+export function runReplyGuidance(trigger: string, peer?: PeerDelivery): string {
+  if (trigger === "bot_message") {
+    return isDelegatedBotRequest(trigger, peer)
+      ? "This is internal delegated work. Keep bookkeeping and progress in the inspectable activity; do not call message_user for internal progress. Your final reply must contain the useful result or genuine blocker and is automatically returned to the requesting bot. Do not send a duplicate result yourself."
+      : `This is an internal coordination update. Apply your standing role, consolidate useful findings, and do not announce every intermediate update. Do not call message_user for internal bookkeeping. If nothing new needs user-facing delivery, the entire final reply must be exactly ${NO_RESPONSE}. Record outstanding work rather than forgetting it. Otherwise give the useful answer in your normal final reply.`;
+  }
   return runAllowsSilentEmpty(trigger)
     ? ROUTINE_SILENT_REPLY_GUIDANCE
     : LONG_WORK_PROGRESS_GUIDANCE;
@@ -4834,8 +4934,17 @@ export function completionNotificationPreview(text: string): string {
   return truncatedPlainText(text, COMPLETION_NOTIFICATION_MAX_CHARS);
 }
 
-export function completionMarksUnread(trigger: string, text: string): boolean {
-  return trigger !== "routine" || Boolean(text);
+export function completionMarksUnread(
+  trigger: string,
+  text: string,
+  peer?: PeerDelivery,
+  hasCoordinator = false,
+): boolean {
+  return (
+    !((trigger === "bot_message" || trigger === "routine") && hasCoordinator) &&
+    !isDelegatedBotRequest(trigger, peer) &&
+    ((trigger !== "routine" && trigger !== "bot_message") || Boolean(text))
+  );
 }
 
 export function missingTurnImagesInstruction(
@@ -4877,7 +4986,7 @@ export async function settleSteeringAttachmentLoads<TImage, TFile>(
 }
 
 export function subagentMarksUnread(trigger: string, status: "running" | "completed" | "failed") {
-  return status === "failed" || trigger !== "routine";
+  return trigger !== "bot_message" && (status === "failed" || trigger !== "routine");
 }
 
 function computerRunRequeueData(
@@ -4976,14 +5085,21 @@ function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[]
 
 async function publishMessage(
   deps: ExecutorDeps,
-  run: { id: string; spaceId: string; threadId: string; botId: string },
+  run: { id: string; spaceId: string; threadId: string; botId: string; trigger?: string },
   role: "user" | "bot" | "system",
   blocks: MessageBlock[],
   markUnread?: boolean,
   clientNonce?: string,
 ) {
   const committed = await deps.prisma.$transaction((tx) =>
-    persistMessageInTransaction(tx, run, role, blocks, markUnread, clientNonce),
+    persistMessageInTransaction(
+      tx,
+      run,
+      role,
+      blocks,
+      markUnread ?? (run.trigger === "bot_message" ? false : undefined),
+      clientNonce,
+    ),
   );
   await deps.events.notify(run.threadId, committed.eventSeq).catch((error) => {
     getLogger().error("thread message realtime notification", error);
@@ -4993,7 +5109,7 @@ async function publishMessage(
 
 async function persistMessageInTransaction(
   tx: Prisma.TransactionClient,
-  run: { id: string; spaceId: string; threadId: string; botId: string },
+  run: { id: string; spaceId: string; threadId: string; botId: string; trigger?: string },
   role: "user" | "bot" | "system",
   blocks: MessageBlock[],
   markUnread?: boolean,
