@@ -92,6 +92,51 @@ describe("mobile session storage", () => {
     finish("old-token");
     await expect(pending).resolves.toEqual({ ok: true, value: "" });
   });
+
+  it("serializes overlapping sign-ins so the newest token owns durable storage", async () => {
+    let finishFirst!: () => void;
+    let stored = "";
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (_key, value) => {
+      if (value === "account-a")
+        await new Promise<void>((resolve) => {
+          finishFirst = resolve;
+        });
+      stored = value;
+    });
+    const first = saveSessionToken("account-a");
+    await vi.waitFor(() => expect(finishFirst).toBeTypeOf("function"));
+    const second = saveSessionToken("account-b");
+    const third = saveSessionToken("account-c");
+    await expect(loadSessionToken()).resolves.toBe("account-c");
+    finishFirst();
+    await Promise.all([first, second, third]);
+    expect(stored).toBe("account-c");
+    expect(vi.mocked(SecureStore.setItemAsync).mock.calls.map((call) => call[1])).toEqual([
+      "account-a",
+      "account-c",
+    ]);
+  });
+
+  it("keeps a new sign-in behind an in-flight sign-out delete", async () => {
+    let finishDelete!: () => void;
+    let stored = "account-a";
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        finishDelete = resolve;
+      });
+      stored = "";
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (_key, value) => {
+      stored = value;
+    });
+    const clearing = clearSessionToken();
+    await vi.waitFor(() => expect(finishDelete).toBeTypeOf("function"));
+    const signingIn = saveSessionToken("account-b");
+    await expect(loadSessionToken()).resolves.toBe("account-b");
+    finishDelete();
+    await Promise.all([clearing, signingIn]);
+    expect(stored).toBe("account-b");
+  });
 });
 
 describe("auth response token parsing", () => {

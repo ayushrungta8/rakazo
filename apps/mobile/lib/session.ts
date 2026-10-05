@@ -9,6 +9,14 @@ let sessionInvalidated = false;
 let sessionFallback: string | undefined;
 let observedToken: string | undefined;
 let sessionOperationEpoch = 0;
+let sessionWrites: Promise<void> = Promise.resolve();
+
+/** Serialize native writes; stale repair writes can otherwise outrun a newer sign-in. */
+function writeSession(operation: () => Promise<void>): Promise<void> {
+  const writing = sessionWrites.then(operation, operation);
+  sessionWrites = writing.catch(() => undefined);
+  return writing;
+}
 
 function observeToken(token: string) {
   if (observedToken === token) return;
@@ -27,50 +35,45 @@ export async function loadSessionToken() {
 
 export async function saveSessionToken(token: string) {
   const epoch = ++sessionOperationEpoch;
-  await SecureStore.setItemAsync(SESSION_KEY, token);
-  if (epoch !== sessionOperationEpoch) {
-    // A later sign-out/sign-in owns the session; heal a stale durable write.
-    await SecureStore.setItemAsync(SESSION_KEY, observedToken ?? "");
-    return;
-  }
   observeToken(token);
   sessionInvalidated = false;
-  sessionFallback = undefined;
+  sessionFallback = token;
+  try {
+    await writeSession(async () => {
+      if (epoch === sessionOperationEpoch) await SecureStore.setItemAsync(SESSION_KEY, token);
+    });
+    if (epoch === sessionOperationEpoch) sessionFallback = undefined;
+  } catch (error) {
+    if (epoch === sessionOperationEpoch) {
+      sessionInvalidated = true;
+      sessionFallback = undefined;
+      observeToken("");
+    }
+    throw error;
+  }
 }
 
 /** Clears the session. Returns false only when SecureStore could neither delete nor overwrite. */
 export async function clearSessionToken(): Promise<boolean> {
   const epoch = ++sessionOperationEpoch;
   sessionInvalidated = true;
+  sessionFallback = undefined;
   observeToken("");
   await stopLiveNotifications(true).catch(() => undefined);
   if (epoch !== sessionOperationEpoch) return true;
   try {
-    await SecureStore.deleteItemAsync(SESSION_KEY);
-    if (epoch !== sessionOperationEpoch) {
-      await SecureStore.setItemAsync(SESSION_KEY, observedToken ?? "").catch(() => undefined);
-      return true;
-    }
-    sessionInvalidated = false;
-    sessionFallback = undefined;
+    await writeSession(async () => {
+      if (epoch !== sessionOperationEpoch) return;
+      try {
+        await SecureStore.deleteItemAsync(SESSION_KEY);
+      } catch {
+        if (epoch === sessionOperationEpoch) await SecureStore.setItemAsync(SESSION_KEY, "");
+      }
+    });
+    if (epoch === sessionOperationEpoch) sessionInvalidated = false;
     return true;
   } catch {
-    if (epoch !== sessionOperationEpoch) return true;
-    try {
-      await SecureStore.setItemAsync(SESSION_KEY, "");
-      if (epoch !== sessionOperationEpoch) {
-        await SecureStore.setItemAsync(SESSION_KEY, observedToken ?? "").catch(() => undefined);
-        return true;
-      }
-      sessionInvalidated = false;
-      sessionFallback = undefined;
-      return true;
-    } catch {
-      if (epoch !== sessionOperationEpoch) return true;
-      sessionInvalidated = true;
-      sessionFallback = undefined;
-      return false;
-    }
+    return epoch !== sessionOperationEpoch;
   }
 }
 
@@ -93,6 +96,7 @@ export async function restoreSessionToken(token: string) {
     if (epoch !== sessionOperationEpoch) return;
     sessionInvalidated = false;
     sessionFallback = token;
+    observeToken(token);
   }
 }
 
