@@ -196,6 +196,7 @@ import {
 } from "./server-update.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
 import {
+  isInternalThreadRun,
   isPeerRun,
   loadAllMessages,
   loadMessagePage,
@@ -1596,13 +1597,15 @@ export function createRouter(deps: RouterDeps) {
       subscribe: authed.threads.subscribe.handler(async function* ({ context, input }) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         const peerRunCache = new Map<string, Promise<boolean>>();
+        const internalRunCache = new Map<string, Promise<boolean>>();
         for await (const event of deps.events.follow(
           target.threadId,
           input.cursor,
           context.signal,
         )) {
-          if (await isPeerRun(deps.prisma, event.runId, peerRunCache)) {
-            if (!shouldForwardPeerThreadEvent(event)) continue;
+          const internal = await isInternalThreadRun(deps.prisma, event.runId, internalRunCache);
+          if (internal || (await isPeerRun(deps.prisma, event.runId, peerRunCache))) {
+            if (!shouldForwardPeerThreadEvent(event, internal)) continue;
           }
           yield event;
         }

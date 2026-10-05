@@ -1075,4 +1075,5 @@ export const RU_MESSAGES: Record<string, string> = {
   "Listening… Tap the mic to stop.": "Слушаю… Нажмите на микрофон, чтобы остановить.",
   "Voice settings": "Настройки голоса",
   "Stop dictation": "Остановить диктовку",
+  "Team activity": "Работа команды",
 };

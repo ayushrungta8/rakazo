@@ -1,10 +1,15 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { ThreadMessage, ThreadMessagePage } from "@rakazo/contracts";
 import { peerConversations } from "@rakazo/core";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback } from "react";
 import { View } from "react-native";
-import { SettingsPage, SettingsText, useSettingsResource } from "../components/settings-controls";
+import {
+  SettingsButton,
+  SettingsPage,
+  SettingsText,
+  useSettingsResource,
+} from "../components/settings-controls";
 import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 
@@ -15,6 +20,7 @@ export default function PeerMessages() {
     peerName?: string;
   }>();
   const { t } = useI18n();
+  const router = useRouter();
   const resource = useSettingsResource(
     useCallback(async () => {
       let before: number | undefined;
@@ -34,26 +40,44 @@ export default function PeerMessages() {
           throw new Error(t("History cursor did not advance"));
         if (before !== undefined) seen.add(before);
       } while (before !== undefined);
-      return (
-        peerConversations(messages).find((conversation) => conversation.peerBotId === peerBotId) ??
-        null
-      );
+      return peerConversations(messages);
     }, [botId, peerBotId, t]),
   );
+  const conversation = resource.data?.find((item) => item.peerBotId === peerBotId);
   return (
     <SettingsPage
-      title={resource.data?.peerBotName ?? peerName ?? t("Peer conversation")}
+      title={
+        peerBotId
+          ? (conversation?.peerBotName ?? peerName ?? t("Peer conversation"))
+          : t("Team activity")
+      }
       loading={resource.loading}
       error={resource.error}
       retry={() => void resource.reload()}
     >
-      {resource.data?.messages.map((message, index) => (
+      {!peerBotId
+        ? resource.data?.map((item) => (
+            <SettingsButton
+              key={item.peerBotId}
+              label={item.peerBotName}
+              onPress={() =>
+                router.push({
+                  pathname: "/peer-messages",
+                  params: { botId, peerBotId: item.peerBotId, peerName: item.peerBotName },
+                })
+              }
+            />
+          ))
+        : null}
+      {conversation?.messages.map((message, index) => (
         <View key={`${message.messageId}:${index}`} style={{ gap: 8 }}>
           <SettingsText>{`${message.direction === "sent" ? t("Sent") : t("Received")} · ${new Date(message.createdAt).toLocaleString()}`}</SettingsText>
           <ChatMarkdown>{message.text}</ChatMarkdown>
         </View>
       ))}
-      {!resource.loading && !resource.data && !resource.error ? (
+      {!resource.loading &&
+      (!peerBotId ? !resource.data?.length : !conversation) &&
+      !resource.error ? (
         <SettingsText>{t("No messages with this bot yet.")}</SettingsText>
       ) : null}
     </SettingsPage>

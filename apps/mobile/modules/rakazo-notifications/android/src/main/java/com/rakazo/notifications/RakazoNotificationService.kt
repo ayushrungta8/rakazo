@@ -156,7 +156,7 @@ class RakazoNotificationService : Service() {
         for ((run, scheduled) in replyLookups) {
           val reply = runCatching {
             latestReply(storage.endpoint, storage.token, storage.spaceId, run)
-          }.getOrDefault("")
+          }.getOrDefault(null)
           if (reply == null) continue
           if (!runIfCurrent(generation) {
               post(
@@ -167,7 +167,7 @@ class RakazoNotificationService : Service() {
                     run.groupName != null -> "${run.botName} replied in ${run.groupName}"
                     else -> "${run.botName} replied"
                   },
-                  body = reply.ifBlank { run.prompt },
+                  body = reply,
                   channel = if (scheduled) Channels.SCHEDULED else Channels.MESSAGES,
                 ),
               )
@@ -461,22 +461,22 @@ private fun latestReply(endpoint: String, token: String, spaceId: String, run: R
     if (run.groupId != null) put("groupId", run.groupId) else put("botId", run.botId)
   }
   val root = rpc(endpoint, token, spaceId, "threads/get", target)
-  val messages = root.optJSONArray("messages") ?: return ""
+  val messages = root.optJSONArray("messages") ?: return null
   for (messageIndex in messages.length() - 1 downTo 0) {
     val message = messages.optJSONObject(messageIndex) ?: continue
     if (message.optString("role") != "bot") continue
     if (message.optString("runId") != run.runId) continue
     if (run.groupId != null && message.optString("botId") != run.botId) continue
-    val blocks = message.optJSONArray("blocks") ?: return ""
+    val blocks = message.optJSONArray("blocks") ?: return null
     val text = mutableListOf<String>()
     for (blockIndex in 0 until blocks.length()) {
       val block = blocks.optJSONObject(blockIndex) ?: continue
       if (block.optString("kind") == "handoff") return null
-      block.optString("text").takeIf(String::isNotBlank)?.let(text::add)
+      if (block.optString("kind") == "text") block.optString("text").takeIf(String::isNotBlank)?.let(text::add)
     }
-    return markdownToPreview(text.joinToString("\n"))
+    return markdownToPreview(text.joinToString("\n")).takeIf { it.isNotBlank() && it != "NO_RESPONSE" }
   }
-  return ""
+  return null
 }
 
 private val TABLE_ROW = Regex("\\s*\\|(.+)\\|\\s*")

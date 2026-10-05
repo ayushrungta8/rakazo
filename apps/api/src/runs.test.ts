@@ -37,3 +37,54 @@ describe("run activity notification preference", () => {
     expect(activityNotificationsEnabled("group-1", false)).toBe(true);
   });
 });
+
+describe("Android activity alert eligibility", () => {
+  it("silences internal work and completed turns without actual reply text", () => {
+    expect(
+      activityNotificationsEnabled(null, true, {
+        internal: true,
+        status: "completed",
+        hasReply: true,
+      }),
+    ).toBe(false);
+    expect(
+      activityNotificationsEnabled(null, true, {
+        internal: false,
+        status: "completed",
+        hasReply: false,
+      }),
+    ).toBe(false);
+    expect(
+      activityNotificationsEnabled(null, true, {
+        internal: false,
+        status: "completed",
+        hasReply: true,
+      }),
+    ).toBe(true);
+    expect(
+      activityNotificationsEnabled(null, true, {
+        internal: false,
+        status: "running",
+        trigger: "created",
+      }),
+    ).toBe(false);
+  });
+  it("preserves required input and takeover alerts, respecting direct-chat preference", () => {
+    expect(
+      activityNotificationsEnabled(null, true, { internal: true, status: "waiting_input" }),
+    ).toBe(true);
+    expect(
+      activityNotificationsEnabled(null, true, { internal: true, status: "waiting_takeover" }),
+    ).toBe(true);
+    expect(
+      activityNotificationsEnabled(null, false, { internal: false, status: "waiting_input" }),
+    ).toBe(false);
+    expect(
+      activityNotificationsEnabled("group", false, {
+        internal: false,
+        status: "completed",
+        hasReply: true,
+      }),
+    ).toBe(true);
+  });
+});

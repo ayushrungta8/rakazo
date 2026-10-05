@@ -1040,4 +1040,5 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Listening… Tap the mic to stop.": "正在聆听…点击麦克风停止。",
   "Voice settings": "语音设置",
   "Stop dictation": "停止听写",
+  "Team activity": "团队动态",
 };

@@ -376,7 +376,7 @@ function Thread() {
   const reactionView = useMemo(
     () =>
       projectMessageReactions(
-        userVisibleMessages(snap?.messages ?? [], { includePeerReceipts: true }).filter((message) =>
+        userVisibleMessages(snap?.messages ?? []).filter((message) =>
           hasVisibleMessagePresentation(message.blocks),
         ),
       ),
@@ -1385,7 +1385,15 @@ function Thread() {
         },
         { text: t("Camera"), onPress: () => void addAttachments(takePhoto) },
         { text: t("File"), onPress: () => void addAttachments(pickDocuments) },
-        ...(!inGroup && botId ? [{ text: t("Voice call"), onPress: () => setShowCall(true) }] : []),
+        ...(!inGroup && botId
+          ? [
+              { text: t("Voice call"), onPress: () => setShowCall(true) },
+              {
+                text: t("Team activity"),
+                onPress: () => router.push({ pathname: "/peer-messages", params: { botId } }),
+              },
+            ]
+          : []),
       ],
     });
   }

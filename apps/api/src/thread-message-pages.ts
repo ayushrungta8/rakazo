@@ -1,5 +1,5 @@
 import type { MessageBlock, ThreadMessage, ThreadMessagePage } from "@rakazo/contracts";
-import { isPeerReceiptBlocks } from "@rakazo/core";
+import { isInternalBotRun, isPeerReceiptBlocks } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 
 type MessageDb = PrismaClient | Prisma.TransactionClient;
@@ -100,14 +100,41 @@ async function withoutPeerRunMessages<T extends { runId: string | null; blocks: 
   const runIds = [...new Set(rows.flatMap((row) => (row.runId ? [row.runId] : [])))];
   if (runIds.length === 0) return rows;
   const peerRuns = await prisma.run.findMany({
-    where: { id: { in: runIds }, trigger: "bot_message" },
-    select: { id: true },
+    where: {
+      id: { in: runIds },
+      OR: [{ trigger: "bot_message" }, { trigger: "routine", bot: { parentBotId: { not: null } } }],
+    },
+    select: {
+      id: true,
+      trigger: true,
+      bot: { select: { parentBotId: true } },
+      sourceMessage: { select: { blocks: true, replyTo: { select: { blocks: true } } } },
+    },
   });
+  const internalRunIds = new Set(
+    peerRuns
+      .filter((run) =>
+        isInternalBotRun({
+          trigger: run.trigger,
+          parentBotId: run.bot?.parentBotId,
+          sourceBlocks: run.sourceMessage?.blocks as MessageBlock[] | undefined,
+          replyBlocks: run.sourceMessage?.replyTo?.blocks as MessageBlock[] | undefined,
+        }),
+      )
+      .map((run) => run.id),
+  );
   const peerRunIds = new Set(peerRuns.map((run) => run.id));
   return rows.filter((row) => {
     if (!row.runId || !peerRunIds.has(row.runId)) return true;
     // Keep peer receipts (chips), ask cards, and the bot's own text reply.
     const blocks = row.blocks as MessageBlock[];
+    if (internalRunIds.has(row.runId))
+      return blocks.some(
+        (block) =>
+          block.kind === "ask" ||
+          block.kind === "bot_message_received" ||
+          block.kind === "bot_message_sent",
+      );
     return blocks.some(
       (block) =>
         block.kind === "bot_message_sent" ||
@@ -135,10 +162,13 @@ export async function isPeerRun(
 }
 
 /** Peer-run SSE events that must still reach an open thread (terminals, waits, receipts, asks, text). */
-export function shouldForwardPeerThreadEvent(event: {
-  type: string;
-  payload: { blocks?: unknown };
-}): boolean {
+export function shouldForwardPeerThreadEvent(
+  event: {
+    type: string;
+    payload: { blocks?: unknown };
+  },
+  internal = false,
+): boolean {
   if (
     event.type === "run.completed" ||
     event.type === "run.failed" ||
@@ -162,7 +192,7 @@ export function shouldForwardPeerThreadEvent(event: {
         (block.kind === "bot_message_received" ||
           block.kind === "bot_message_sent" ||
           block.kind === "ask" ||
-          block.kind === "text"),
+          (!internal && block.kind === "text")),
     )
   );
 }
@@ -191,4 +221,36 @@ function toThreadMessage(row: {
     runId: row.runId ?? undefined,
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+export async function isInternalThreadRun(
+  prisma: MessageDb,
+  runId: string | undefined,
+  cache: Map<string, Promise<boolean>>,
+): Promise<boolean> {
+  if (!runId) return false;
+  let result = cache.get(runId);
+  if (!result) {
+    result = prisma.run
+      .findUnique({
+        where: { id: runId },
+        select: {
+          trigger: true,
+          bot: { select: { parentBotId: true } },
+          sourceMessage: { select: { blocks: true, replyTo: { select: { blocks: true } } } },
+        },
+      })
+      .then((run) =>
+        run
+          ? isInternalBotRun({
+              trigger: run.trigger,
+              parentBotId: run.bot.parentBotId,
+              sourceBlocks: run.sourceMessage?.blocks as MessageBlock[] | undefined,
+              replyBlocks: run.sourceMessage?.replyTo?.blocks as MessageBlock[] | undefined,
+            })
+          : false,
+      );
+    cache.set(runId, result);
+  }
+  return result;
 }

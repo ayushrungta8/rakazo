@@ -553,3 +553,71 @@ describe("thread message pages", () => {
     expect(findMany.mock.calls.map(([query]) => query.where.seq?.lt)).toEqual([undefined, 3, 1]);
   });
 });
+
+describe("internal specialist transcripts", () => {
+  it("hides specialist result text but keeps user approval and inspectable peer receipts", async () => {
+    const rows = [
+      {
+        id: "internal",
+        threadId: "thread",
+        seq: 2,
+        role: "bot",
+        runId: "peer",
+        botId: "specialist",
+        blocks: [{ kind: "text", text: "Internal research" }],
+        createdAt: new Date(),
+      },
+      {
+        id: "approval",
+        threadId: "thread",
+        seq: 1,
+        role: "bot",
+        runId: "peer",
+        botId: "specialist",
+        blocks: [{ kind: "ask", text: "Approval", status: "pending", actions: [] }],
+        createdAt: new Date(),
+      },
+    ];
+    const prisma = {
+      message: { findMany: vi.fn(async () => rows) },
+      run: {
+        findMany: vi.fn(async () => [
+          { id: "peer", trigger: "bot_message", bot: { parentBotId: "coordinator" } },
+        ]),
+      },
+    } as unknown as PrismaClient;
+    const page = await loadMessagePage(prisma, "thread", undefined, 100);
+    expect(page.messages.map((m) => m.id)).toEqual(["approval"]);
+    const inspectable = await loadMessagePage(prisma, "thread", undefined, 100, undefined, true);
+    expect(inspectable.messages.map((m) => m.id)).toEqual(["approval", "internal"]);
+  });
+  it("suppresses internal live replies while keeping approval events", () => {
+    expect(
+      shouldForwardPeerThreadEvent(
+        {
+          type: "thread.message.created",
+          payload: { blocks: [{ kind: "text", text: "Internal research" }] },
+        },
+        true,
+      ),
+    ).toBe(false);
+    expect(
+      shouldForwardPeerThreadEvent(
+        { type: "thread.message.created", payload: { blocks: [{ kind: "ask", text: "Approve" }] } },
+        true,
+      ),
+    ).toBe(true);
+    expect(shouldForwardPeerThreadEvent({ type: "run.waiting_input", payload: {} }, true)).toBe(
+      true,
+    );
+    expect(
+      shouldForwardPeerThreadEvent(
+        {
+          type: "thread.message.created",
+          payload: { blocks: [{ kind: "text", text: "Coordinator answer" }] },
+        },
+        false,
+      ),
+    ).toBe(true);
+  });
+});

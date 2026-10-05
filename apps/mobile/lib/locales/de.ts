@@ -1079,4 +1079,5 @@ export const DE_MESSAGES: Record<string, string> = {
   "Listening… Tap the mic to stop.": "Ich höre zu… Tippe zum Beenden auf das Mikrofon.",
   "Voice settings": "Spracheinstellungen",
   "Stop dictation": "Diktieren beenden",
+  "Team activity": "Team-Aktivität",
 };

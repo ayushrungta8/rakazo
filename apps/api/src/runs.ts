@@ -1,5 +1,5 @@
 import { type Actor, MessageBlock, type RunActivityRow } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, botMessageContext } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, botMessageContext, isInternalBotRun } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 
 const RECENT_LIMIT = 20;
@@ -30,8 +30,13 @@ export function activityPromptSnippet(
 export function activityNotificationsEnabled(
   groupId: string | null,
   notifyOnFinish: boolean,
+  delivery?: { internal: boolean; status: string; hasReply?: boolean; trigger?: string },
 ): boolean {
-  return groupId !== null || notifyOnFinish;
+  if (!groupId && !notifyOnFinish) return false;
+  if (delivery?.status === "waiting_input" || delivery?.status === "waiting_takeover") return true;
+  if (delivery?.internal || delivery?.trigger === "created") return false;
+  if (delivery?.status === "completed" && delivery.hasReply === false) return false;
+  return true;
 }
 
 export async function listSpaceRuns(
@@ -49,9 +54,9 @@ export async function listSpaceRuns(
         : { status: { in: [...TERMINAL_STATUSES] } }),
     },
     include: {
-      bot: { select: { name: true, archivedAt: true, notifyOnFinish: true } },
+      bot: { select: { name: true, archivedAt: true, notifyOnFinish: true, parentBotId: true } },
       task: { select: { prompt: true } },
-      sourceMessage: { select: { blocks: true } },
+      sourceMessage: { select: { blocks: true, replyTo: { select: { blocks: true } } } },
       thread: {
         select: {
           groupId: true,
@@ -66,6 +71,23 @@ export async function listSpaceRuns(
     take: filter === "recent" ? RECENT_LIMIT : undefined,
   });
 
+  const completedIds = rows.filter((row) => row.status === "completed").map((row) => row.id);
+  const replies = completedIds.length
+    ? await prisma.message.findMany({
+        where: { runId: { in: completedIds }, role: "bot" },
+        select: { runId: true, blocks: true },
+      })
+    : [];
+  const runsWithReply = new Set(
+    replies
+      .filter((message) =>
+        (message.blocks as MessageBlock[]).some(
+          (block) =>
+            block.kind === "text" && block.text.trim() && block.text.trim() !== "NO_RESPONSE",
+        ),
+      )
+      .map((message) => message.runId),
+  );
   return rows.map((row) => ({
     runId: row.id,
     botId: row.botId,
@@ -75,7 +97,17 @@ export async function listSpaceRuns(
     threadId: row.threadId,
     status: row.status as RunActivityRow["status"],
     trigger: row.trigger as RunActivityRow["trigger"],
-    notificationsEnabled: activityNotificationsEnabled(row.thread.groupId, row.bot.notifyOnFinish),
+    notificationsEnabled: activityNotificationsEnabled(row.thread.groupId, row.bot.notifyOnFinish, {
+      internal: isInternalBotRun({
+        trigger: row.trigger,
+        parentBotId: row.bot.parentBotId,
+        sourceBlocks: row.sourceMessage?.blocks as MessageBlock[] | undefined,
+        replyBlocks: row.sourceMessage?.replyTo?.blocks as MessageBlock[] | undefined,
+      }),
+      status: row.status,
+      trigger: row.trigger,
+      hasReply: runsWithReply.has(row.id),
+    }),
     promptSnippet: activityPromptSnippet({
       trigger: row.trigger,
       prompt: row.task.prompt,

@@ -9,6 +9,7 @@ import {
   buildBotMessageWakePrompt,
   clampBotMessage,
   formatBotRosterLines,
+  isInternalBotRun,
   nextBotMessageHop,
   renderBotDirectory,
   renderGroupMembersContext,
@@ -388,5 +389,42 @@ describe("inbound wake prompt", () => {
   it("continues independent work after sending useful updates", () => {
     expect(prompt).toContain("Sending does not end your turn");
     expect(prompt).toContain("continue independent work");
+  });
+});
+
+describe("internal bot-run delivery", () => {
+  it("keeps direct specialist chats visible and delegated work internal", async () => {
+    expect(isInternalBotRun({ trigger: "user", parentBotId: "coordinator" })).toBe(false);
+    expect(isInternalBotRun({ trigger: "routine", parentBotId: "coordinator" })).toBe(true);
+    expect(isInternalBotRun({ trigger: "routine" })).toBe(false);
+    expect(isInternalBotRun({ trigger: "bot_message", parentBotId: "coordinator" })).toBe(true);
+    expect(
+      isInternalBotRun({
+        trigger: "bot_message",
+        sourceBlocks: [
+          {
+            kind: "bot_message_received",
+            fromBotId: "specialist",
+            fromBotName: "Specialist",
+            text: "Verified answer",
+            intent: "result",
+          },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      isInternalBotRun({
+        trigger: "bot_message",
+        sourceBlocks: [
+          {
+            kind: "bot_message_received",
+            fromBotId: "coordinator",
+            fromBotName: "Coordinator",
+            text: "Research",
+            intent: "request",
+          },
+        ],
+      }),
+    ).toBe(true);
   });
 });

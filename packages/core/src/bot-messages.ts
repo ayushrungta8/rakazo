@@ -178,3 +178,25 @@ export function buildBotMessageWakePrompt(args: {
     action,
   ].join("\n");
 }
+
+/** Internal work belongs in team history; direct chats and coordinator answers remain visible. */
+export function isInternalBotRun(input: {
+  trigger: string;
+  parentBotId?: string | null;
+  sourceBlocks?: readonly MessageBlock[];
+  replyBlocks?: readonly MessageBlock[];
+}): boolean {
+  if (input.trigger === "routine") return Boolean(input.parentBotId);
+  if (input.trigger !== "bot_message") return false;
+  if (input.parentBotId) return true;
+  const peer = botMessageContext(input.sourceBlocks ?? []);
+  const repliesToRequest = (input.replyBlocks ?? []).some(
+    (block) =>
+      block.kind === "bot_message_sent" &&
+      (block.intent === undefined || block.intent === "request" || block.intent === "question"),
+  );
+  return (
+    !repliesToRequest &&
+    (peer?.intent === undefined || peer.intent === "request" || peer.intent === "question")
+  );
+}
