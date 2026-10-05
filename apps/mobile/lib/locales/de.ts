@@ -1,4 +1,8 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Could not load settings": "Einstellungen konnten nicht geladen werden",
+  Error: "Fehler",
+  "Request canceled": "Anfrage abgebrochen",
+
   "Every minute": "Jede Minute",
   "Every day": "Jeden Tag",
   "Every {count} minutes": "Alle {count} Minuten",

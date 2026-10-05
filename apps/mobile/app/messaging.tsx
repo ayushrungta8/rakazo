@@ -43,6 +43,7 @@ export default function Messaging() {
         conversations: spaces.current.externalConversations,
       };
     }, []),
+    "messaging",
   );
   const mutate = (path: string, input: Record<string, unknown>) =>
     action.run(async () => {

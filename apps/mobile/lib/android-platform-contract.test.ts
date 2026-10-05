@@ -93,7 +93,9 @@ describe("Android mobile platform contract", () => {
     expect(service).toContain("cancel(threadId.hashCode())");
     expect(module).toContain('AsyncFunction("setOpenThread")');
     expect(live).toContain("setOpenNotificationThread");
-    expect(thread).toContain("if (!navigation.isFocused() || !notificationThreadId) return");
+    expect(thread).toContain("if (!navigation.isFocused()) return");
+    expect(thread).toContain("if (!activeThreadId.current) return");
+    expect(thread).toContain("if (cacheScope !== apiCacheScope() || !mounted.current) return");
     expect(service).toContain(
       "fun clearSession(context: Context) {\n      synchronized(sessionLock)",
     );
@@ -103,7 +105,10 @@ describe("Android mobile platform contract", () => {
     expect(service).toContain('putString("rakazo.spaceId", run.spaceId)');
     expect(thread).toContain("export default function ThreadRoute()");
     expect(thread).toContain("selectSpace(requestedSpaceId)");
-    expect(thread).toContain("routeMatchesSelectedSpace) return <Thread />");
+    expect(thread).toContain(
+      'if (routeState === "ready" && !invalidSpaceId && routeMatchesSelectedSpace)',
+    );
+    expect(thread).toContain("cacheScope={cacheScope}");
     expect(service).toContain('if (run.groupId != null) put("groupId", run.groupId)');
     expect(service).toContain('if (message.optString("runId") != run.runId) continue');
     expect(service).toContain('if (block.optString("kind") == "handoff") return null');

@@ -32,7 +32,7 @@ export class ThreadScrollBehavior {
     if (latestMessageId === null || latestMessageId === this.latestMessageId) return null;
     const initial = this.latestMessageId === null;
     this.latestMessageId = latestMessageId;
-    if (initial) return this.laidOut ? "jump" : null;
+    if (initial) return this.laidOut && !this.currentState.detached ? "jump" : null;
     if (this.currentState.detached) {
       this.currentState = { detached: true, unread: true };
       return null;

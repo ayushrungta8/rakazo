@@ -7,7 +7,15 @@ import {
 } from "@rakazo/contracts";
 import { botColors } from "@rakazo/ui-tokens";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -32,18 +40,22 @@ import {
 } from "../lib/activity";
 import { loadActivityMode, saveActivityMode } from "../lib/activity-mode";
 import {
+  apiCacheRevision,
+  apiCacheScope,
   currentApiBase,
   loadSessionToken,
   type MobileBot,
-  type MobileBotSection,
   type MobileGroup,
   type MobileMe,
-  type MobileSpace,
+  MobileRpcError,
   type MobileSpaceNavigation,
+  peekRpc,
   rpc,
   selectedSpaceId,
   selectInitialSpace,
   selectSpace,
+  subscribeApiCacheScope,
+  writeRpcSnapshot,
 } from "../lib/api";
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
 import { allowFocusPrompt, scheduleFocusPrompt } from "../lib/focus-prompt";
@@ -65,6 +77,7 @@ import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
 import { querySpaceSearch } from "../lib/search";
 import { mobileSearchDestination } from "../lib/search-destination";
+import { sessionAvailable } from "../lib/session";
 
 const FALLBACK_COLOR = botColors[3];
 
@@ -83,28 +96,53 @@ export default function Home() {
   const appearance = resolveMobileAppearance();
   const styles = useThemedStyles(createHomeStyles);
   const { t, locale } = useI18n();
-  const [bots, setBots] = useState<MobileBot[]>([]);
-  const [groups, setGroups] = useState<MobileGroup[]>([]);
-  const [botSections, setBotSections] = useState<MobileBotSection[]>([]);
-  const [spaces, setSpaces] = useState<MobileSpace[]>([]);
-  const [me, setMe] = useState<MobileMe | null>(null);
+  const scope = useSyncExternalStore(subscribeApiCacheScope, apiCacheScope, apiCacheScope);
+  const [homeSnapshot, setHomeSnapshot] = useState(() => ({
+    scope,
+    navigation: peekRpc<MobileSpaceNavigation>("spaces/list"),
+    me: peekRpc<MobileMe>("me"),
+    updatedAt: Date.now(),
+  }));
+  const currentHome = homeSnapshot.scope === scope ? homeSnapshot : undefined;
+  const homeSnapshotRef = useRef(homeSnapshot);
+  homeSnapshotRef.current = homeSnapshot;
+  const bots = currentHome?.navigation?.current.bots ?? [];
+  const groups = currentHome?.navigation?.current.groups ?? [];
+  const botSections = currentHome?.navigation?.current.botSections ?? [];
+  const spaces = currentHome?.navigation?.spaces ?? [];
+  const me = currentHome?.me ?? null;
   const [error, setError] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
-  const [hasSession, setHasSession] = useState(false);
+  const [ready, setReady] = useState(() => sessionAvailable() !== undefined);
+  const [hasSession, setHasSession] = useState(() => sessionAvailable() === true);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
-  const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
+  const [searchSnapshot, setSearchSnapshot] = useState<{ scope: string; hits: SearchHit[] }>({
+    scope,
+    hits: [],
+  });
+  const searchHits = searchSnapshot.scope === scope ? searchSnapshot.hits : [];
+  const setSearchHits = useCallback(
+    (hits: SearchHit[]) => setSearchSnapshot({ scope, hits }),
+    [scope],
+  );
   const [searchLoading, setSearchLoading] = useState(false);
   const [organizeTarget, setOrganizeTarget] = useState<{
     kind: "bot" | "group";
     id: string;
   } | null>(null);
   const [activityMode, setActivityMode] = useState(false);
-  const [activity, setActivity] = useState<{ active: RunActivityRow[]; recent: RunActivityRow[] }>({
-    active: [],
-    recent: [],
-  });
+  const [activitySnapshot, setActivitySnapshot] = useState<{
+    scope: string;
+    data: { active: RunActivityRow[]; recent: RunActivityRow[] };
+  }>({ scope, data: { active: [], recent: [] } });
+  const activity =
+    activitySnapshot.scope === scope ? activitySnapshot.data : { active: [], recent: [] };
+  const setActivity = useCallback(
+    (data: { active: RunActivityRow[]; recent: RunActivityRow[] }) =>
+      setActivitySnapshot({ scope, data }),
+    [scope],
+  );
   const activityRequestId = useRef(0);
   const inboxRequestId = useRef(0);
   const creatingBotRef = useRef(false);
@@ -139,27 +177,45 @@ export default function Home() {
   const loadBots = useCallback(async () => {
     if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
     const requestId = ++inboxRequestId.current;
+    const requestScope = apiCacheScope();
+    const revision = apiCacheRevision();
     setError(null);
     try {
       const [navigation, nextMe] = await Promise.all([
         rpc<MobileSpaceNavigation>("spaces/list"),
         rpc<MobileMe>("me"),
       ]);
-      if (requestId !== inboxRequestId.current) return;
+      if (
+        requestId !== inboxRequestId.current ||
+        requestScope !== apiCacheScope() ||
+        revision !== apiCacheRevision()
+      )
+        return;
       if (!(await selectInitialSpace(nextMe.spaceId))) {
         throw new Error(t("Could not save the default space"));
       }
-      if (requestId !== inboxRequestId.current) return;
-      setBots(navigation.current.bots);
-      setBotSections(navigation.current.botSections);
-      setGroups(navigation.current.groups);
-      setSpaces(navigation.spaces);
-      setMe(nextMe);
+      if (requestId !== inboxRequestId.current || selectedSpaceId() !== nextMe.spaceId) return;
+      // Bootstrap may have selected the server's default Space. These responses
+      // resolve that same Space, so seed its newly owned cache once.
+      writeRpcSnapshot("spaces/list", {}, navigation);
+      writeRpcSnapshot("me", {}, nextMe);
+      setHomeSnapshot({ scope: apiCacheScope(), navigation, me: nextMe, updatedAt: Date.now() });
     } catch (err) {
-      if (requestId !== inboxRequestId.current) return;
+      if (requestId !== inboxRequestId.current || requestScope !== apiCacheScope()) return;
+      if (
+        (err instanceof MobileRpcError && [401, 403, 404].includes(err.status)) ||
+        Date.now() - homeSnapshotRef.current.updatedAt > 5 * 60_000
+      ) {
+        setHomeSnapshot({
+          scope: requestScope,
+          navigation: undefined,
+          me: undefined,
+          updatedAt: 0,
+        });
+      }
       setError(err instanceof Error ? err.message : t("Could not load bots"));
     }
-  }, []);
+  }, [scope]);
 
   const refreshBots = useCallback(async () => {
     setRefreshing(true);
@@ -175,7 +231,7 @@ export default function Home() {
       setHasSession(Boolean(token));
       setReady(true);
     });
-  }, []);
+  }, [scope]);
 
   useEffect(() => {
     if (!hasSession) return;
@@ -207,15 +263,16 @@ export default function Home() {
       return;
     }
     const requestId = ++activityRequestId.current;
+    const requestScope = apiCacheScope();
     try {
       const next = await fetchSpaceActivity();
-      if (requestId !== activityRequestId.current) return;
+      if (requestId !== activityRequestId.current || requestScope !== apiCacheScope()) return;
       setActivity(next);
     } catch {
       // Keep the last good snapshot on transient RPC failures; only drop stale responses.
       if (requestId !== activityRequestId.current) return;
     }
-  }, [activityMode, hasSession, query, searching]);
+  }, [activityMode, hasSession, query, searching, scope]);
 
   useFocusEffect(
     useCallback(() => {
@@ -264,7 +321,7 @@ export default function Home() {
       abort.abort();
       clearTimeout(timer);
     };
-  }, [query, searching]);
+  }, [query, searching, scope]);
 
   const visible = useMemo(() => filterBots(bots, query), [bots, query]);
   const visibleGroups = useMemo(() => {
@@ -275,6 +332,7 @@ export default function Home() {
     );
   }, [groups, query]);
   const listData = useMemo((): InboxItem[] => {
+    if (!currentHome) return [];
     if (query.trim() && searching) {
       return searchHits.map((hit) => ({ type: "search", hit }));
     }
@@ -308,6 +366,7 @@ export default function Home() {
           : [];
     return spaceInboxItems(sidebarSpaces, collapsedRosterParents);
   }, [
+    currentHome,
     botSections,
     collapsedRosterParents,
     locale,
@@ -530,7 +589,17 @@ export default function Home() {
         />
       ) : null}
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("Retry")}
+          onPress={() => void refreshBots()}
+        >
+          <Text style={styles.error}>
+            {error} · {t("Retry")}
+          </Text>
+        </Pressable>
+      ) : null}
       {spaceRecoveryId ? (
         <Pressable
           accessibilityRole="button"
@@ -568,6 +637,7 @@ export default function Home() {
           />
         }
         ListHeaderComponent={
+          currentHome &&
           activityMode &&
           !searching &&
           !query.trim() &&
@@ -576,17 +646,56 @@ export default function Home() {
           ) : null
         }
         ListEmptyComponent={
-          <Text style={styles.empty}>
-            {query.trim() && searching
-              ? searchLoading
-                ? t("Searching…")
-                : t("No results")
-              : query.trim()
-                ? t("No matching bots")
-                : searching
-                  ? t("Search conversations, files, and routines")
-                  : t("Tap + to create a bot")}
-          </Text>
+          !currentHome?.navigation && !error && !searching ? (
+            <View
+              accessibilityLabel={t("Loading")}
+              accessibilityRole="progressbar"
+              style={{ gap: 24, paddingVertical: 20 }}
+            >
+              {[0, 1, 2, 3].map((row) => (
+                <View key={row} style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+                  <View
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: 24,
+                      backgroundColor: tokens.muted,
+                    }}
+                  />
+                  <View style={{ flex: 1, gap: 10 }}>
+                    <View
+                      style={{
+                        width: "40%",
+                        height: 14,
+                        borderRadius: 4,
+                        backgroundColor: tokens.muted,
+                      }}
+                    />
+                    <View
+                      style={{
+                        width: "75%",
+                        height: 12,
+                        borderRadius: 4,
+                        backgroundColor: tokens.muted,
+                      }}
+                    />
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.empty}>
+              {query.trim() && searching
+                ? searchLoading
+                  ? t("Searching…")
+                  : t("No results")
+                : query.trim()
+                  ? t("No matching bots")
+                  : searching
+                    ? t("Search conversations, files, and routines")
+                    : t("Tap + to create a bot")}
+            </Text>
+          )
         }
         renderItem={({ item }) =>
           item.type === "search" ? (

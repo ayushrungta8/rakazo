@@ -38,6 +38,7 @@ export default function McpServers() {
       ]);
       return { servers, bots, assignments, me };
     }, []),
+    "mcp-servers",
   );
   const [edit, setEdit] = useState<McpServer | "new" | null>(null);
   const [name, setName] = useState("");

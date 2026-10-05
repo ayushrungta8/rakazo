@@ -83,8 +83,11 @@ import {
 import { NativeSymbol } from "../components/native-symbol";
 import { VoiceCall } from "../components/voice-call";
 import {
+  apiCacheRevision,
+  apiCacheScope,
   applyMobileThreadEvent,
   blockText,
+  captureApiRequestContext,
   copyableMobileMessageText,
   currentApiBase,
   loadSessionToken,
@@ -92,15 +95,19 @@ import {
   type MobileGroup,
   type MobileMessage,
   type MobileMessagePage,
+  MobileRpcError,
   type MobileSnapshot,
   mergeMobileSnapshot,
   messagingProviderLabel,
+  peekRpc,
   prependMobileMessagePage,
   rpc,
   selectedSpaceId,
   selectSpace,
   shouldApplyMobileThreadRefresh,
+  subscribeApiCacheScope,
   subscribeThread,
+  writeRpcSnapshot,
 } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { type MobileArtifactTarget, openMobileArtifact } from "../lib/artifact-open";
@@ -138,6 +145,13 @@ import {
   ThreadScrollBehavior,
   type ThreadScrollState,
 } from "../lib/thread-scroll";
+import type { ThreadViewState } from "../lib/thread-view-state";
+import {
+  isOlderThreadSnapshot,
+  loadThreadViewState,
+  restoreUnsentThreadViewState,
+  saveThreadViewState,
+} from "../lib/thread-view-state";
 import { speakText } from "../lib/voice";
 
 type PendingAttachment = PickedAttachment & { threadKey: string };
@@ -195,7 +209,12 @@ export default function ThreadRoute() {
   const tokens = useMobileTokens();
   const { t } = useI18n();
   const router = useRouter();
-  const { spaceId } = useLocalSearchParams<{ spaceId?: string | string[] }>();
+  const { spaceId, botId, groupId } = useLocalSearchParams<{
+    spaceId?: string | string[];
+    botId?: string;
+    groupId?: string;
+  }>();
+  const cacheScope = useSyncExternalStore(subscribeApiCacheScope, apiCacheScope, apiCacheScope);
   const requestedSpaceId = typeof spaceId === "string" && spaceId ? spaceId : null;
   const invalidSpaceId = spaceId !== undefined && requestedSpaceId === null;
   const routeMatchesSelectedSpace =
@@ -226,9 +245,15 @@ export default function ThreadRoute() {
     return () => {
       cancelled = true;
     };
-  }, [invalidSpaceId, requestedSpaceId]);
+  }, [cacheScope, invalidSpaceId, requestedSpaceId]);
 
-  if (routeState === "ready" && !invalidSpaceId && routeMatchesSelectedSpace) return <Thread />;
+  if (routeState === "ready" && !invalidSpaceId && routeMatchesSelectedSpace)
+    return (
+      <Thread
+        key={`${cacheScope}:${groupId ? `group:${groupId}` : `bot:${botId ?? ""}`}`}
+        cacheScope={cacheScope}
+      />
+    );
   return (
     <View
       style={{
@@ -249,7 +274,7 @@ export default function ThreadRoute() {
   );
 }
 
-function Thread() {
+function Thread({ cacheScope }: { cacheScope: string }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
   const [botActionsOpen, setBotActionsOpen] = useState(false);
@@ -265,6 +290,12 @@ function Thread() {
     name?: string;
     messageId?: string;
   }>();
+  const threadTarget = groupId ? { groupId } : { botId: botId ?? "" };
+  const viewKey = groupId ? `group:${groupId}` : `bot:${botId ?? ""}`;
+  const [initialView] = useState(() => loadThreadViewState(cacheScope, viewKey));
+  const [initialSnapshot] = useState(
+    () => peekRpc<MobileSnapshot>("threads/get", threadTarget) ?? null,
+  );
   const inGroup = Boolean(groupId);
   const chatScrollGesture = useMemo(() => Gesture.Native(), []);
   const scroll = useRef<FlatList<MobileMessage>>(null);
@@ -272,7 +303,13 @@ function Thread() {
   const scrollBehavior = useRef(new ThreadScrollBehavior());
   const userDragging = useRef(false);
   const loadingOlderContent = useRef(false);
-  const expandedHistoryThread = useRef<string | null>(null);
+  const expandedHistoryThread = useRef<string | null>(
+    initialView &&
+      initialSnapshot &&
+      initialSnapshot.threadId === initialView.expandedHistoryThreadId
+      ? initialView.expandedHistoryThreadId
+      : null,
+  );
   const historyEpoch = useRef(0);
   const jumpGeneration = useRef(0);
   const pinnedAroundRef = useRef<{
@@ -296,12 +333,14 @@ function Thread() {
   const autoSpoken = useRef<string | null>(null);
   const autoSpokenBotId = useRef<string | null>(null);
   const threadKey = groupId ?? botId;
+  const scrollOffset = useRef(initialSnapshot ? (initialView?.distanceFromLatest ?? 0) : 0);
+  const pendingScrollRestore = useRef(scrollOffset.current > 80 ? scrollOffset.current : null);
   const [threadScrollState, setThreadScrollState] = useState<ThreadScrollState>(() =>
     scrollBehavior.current.state(),
   );
   useLayoutEffect(() => {
     scrollBehavior.current.openThread(threadKey ?? "");
-    expandedHistoryThread.current = null;
+    scrollBehavior.current.onUserScroll(scrollOffset.current);
     pinnedAroundRef.current = null;
     jumpScrollTarget.current = null;
     loadingOlderContent.current = false;
@@ -313,8 +352,8 @@ function Thread() {
     : botId
       ? { botId }
       : undefined;
-  const [snap, setSnap] = useState<MobileSnapshot | null>(null);
-  const snapRef = useRef<MobileSnapshot | null>(null);
+  const [snap, setSnap] = useState<MobileSnapshot | null>(initialSnapshot);
+  const snapRef = useRef<MobileSnapshot | null>(initialSnapshot);
   const streamResponses = useSyncExternalStore(
     subscribeResponseStreaming,
     getCachedResponseStreamingEnabled,
@@ -324,7 +363,9 @@ function Thread() {
   streamResponsesRef.current = streamResponses;
 
   function commitSnap(next: MobileSnapshot | null) {
+    if (cacheScope !== apiCacheScope()) return;
     snapRef.current = next;
+    if (next) writeRpcSnapshot("threads/get", threadTarget, next);
     setSnap(withLiveStreamingProgress(next, streamResponsesRef.current));
   }
 
@@ -332,7 +373,7 @@ function Thread() {
     setSnap(withLiveStreamingProgress(snapRef.current, streamResponses));
   }, [streamResponses]);
   const activeThreadId = useRef<string | undefined>(undefined);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(initialView?.draft ?? "");
   const [showDictation, setShowDictation] = useState(false);
   const [dictationPhase, setDictationPhase] = useState<DictationPhase>("idle");
   const [dictationStopRequested, setDictationStopRequested] = useState(0);
@@ -343,9 +384,15 @@ function Thread() {
   }, [threadKey]);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
-  const [agentSkills, setAgentSkills] = useState<AgentSkillCatalogEntry[]>([]);
-  const [mentionBots, setMentionBots] = useState<MobileBot[]>([]);
-  const [mentionGroups, setMentionGroups] = useState<MobileGroup[]>([]);
+  const [agentSkills, setAgentSkills] = useState<AgentSkillCatalogEntry[]>(
+    () => peekRpc<AgentSkillCatalogEntry[]>("agentSkills/list") ?? [],
+  );
+  const [mentionBots, setMentionBots] = useState<MobileBot[]>(
+    () => peekRpc<MobileBot[]>("bots/list") ?? [],
+  );
+  const [mentionGroups, setMentionGroups] = useState<MobileGroup[]>(
+    () => peekRpc<MobileGroup[]>("groups/list") ?? [],
+  );
   const [mentionRoutines, setMentionRoutines] = useState<Array<Routine & { botName?: string }>>([]);
   const [mentionConnectors, setMentionConnectors] = useState<
     Array<{
@@ -355,11 +402,22 @@ function Thread() {
       connectionId?: string;
     }>
   >([]);
-  const [selectedMentions, setSelectedMentions] = useState<ComposerMention[]>([]);
-  const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
-  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
-  const [replyTarget, setReplyTarget] = useState<MobileMessage | null>(null);
-  const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
+  const [selectedMentions, setSelectedMentions] = useState<ComposerMention[]>(
+    initialView?.selectedMentions ?? [],
+  );
+  const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(
+    initialView?.selectedSkill ?? null,
+  );
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>(
+    initialView?.pendingAttachments ?? [],
+  );
+  const [replyTarget, setReplyTarget] = useState<MobileMessage | null>(
+    initialSnapshot?.messages.find((message) => message.id === initialView?.replyTarget?.id) ??
+      null,
+  );
+  const [attachmentNotice, setAttachmentNotice] = useState<string | null>(
+    initialView?.attachmentNotice ?? null,
+  );
   const [sending, setSending] = useState(false);
   const sendInFlight = useRef(false);
   const [outgoing, setOutgoing] = useState<{
@@ -369,10 +427,46 @@ function Thread() {
     seq?: number;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownArtifactPreviewTarget | null>(
     null,
   );
+  const mounted = useRef(true);
+  const viewState = useRef<ThreadViewState>({
+    draft,
+    selectedMentions,
+    selectedSkill,
+    pendingAttachments,
+    replyTarget,
+    attachmentNotice,
+    distanceFromLatest: scrollOffset.current,
+    expandedHistoryThreadId: expandedHistoryThread.current,
+  });
+  useLayoutEffect(() => {
+    viewState.current = {
+      draft,
+      selectedMentions,
+      selectedSkill,
+      pendingAttachments,
+      replyTarget,
+      attachmentNotice,
+      distanceFromLatest: scrollOffset.current,
+      expandedHistoryThreadId: expandedHistoryThread.current,
+    };
+  });
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (cacheScope !== apiCacheScope()) return;
+      saveThreadViewState(cacheScope, viewKey, {
+        ...viewState.current,
+        distanceFromLatest: scrollOffset.current,
+        expandedHistoryThreadId: expandedHistoryThread.current,
+      });
+    };
+  }, [cacheScope, viewKey]);
   const reactionView = useMemo(
     () =>
       projectMessageReactions(
@@ -470,6 +564,7 @@ function Thread() {
   const working = inGroup ? workingGroupBots.length > 0 : isWorkingStatus(currentBotStatus);
 
   const speakFinishedReply = useCallback(() => {
+    if (cacheScope !== apiCacheScope() || !mounted.current) return;
     if (!botId || inGroup || !currentBot) return;
     const decision = nextAutoSpeakAction({
       botId: currentBot.id,
@@ -492,6 +587,7 @@ function Thread() {
     void speakText(decision.text, { botId: currentBot.id }).catch(() => undefined);
   }, [
     botId,
+    cacheScope,
     inGroup,
     currentBot,
     navigation,
@@ -509,45 +605,57 @@ function Thread() {
   }, [speakFinishedReply]);
 
   useEffect(() => {
-    void rpc<AgentSkillCatalogEntry[]>("agentSkills/list")
-      .then(setAgentSkills)
-      .catch(() => setAgentSkills([]));
+    void rpc<AgentSkillCatalogEntry[]>("agentSkills/list", {}, { cache: "prefer-cache" })
+      .then((rows) => {
+        if (cacheScope === apiCacheScope()) setAgentSkills(rows);
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
     setThreadScrollState(scrollBehavior.current.state());
   }, [threadKey]);
 
-  const refreshMentionBots = useCallback(async () => {
-    if (!botId && !groupId) return;
-    const generation = ++mentionBotsRefreshGeneration.current;
-    const targetBotId = botId;
-    try {
-      const bots = await rpc<MobileBot[]>("bots/list");
-      // Apply any successful response that is still the newest applied so far.
-      // A later failed refresh must not discard an earlier success.
-      if (generation < mentionBotsAppliedGeneration.current) return;
-      if (targetBotId !== activeBotId.current) return;
-      mentionBotsAppliedGeneration.current = generation;
-      setMentionBots(bots);
-      if (targetBotId) {
-        const next = bots.find((bot) => bot.id === targetBotId);
-        // Read the route name from a ref so renaming does not recreate this
-        // callback (and restart the SSE subscription that depends on it).
-        if (next?.name && next.name !== routeName.current) {
-          router.setParams({ name: next.name });
+  const refreshMentionBots = useCallback(
+    async (force = false) => {
+      if (!botId && !groupId) return;
+      const generation = ++mentionBotsRefreshGeneration.current;
+      const targetBotId = botId;
+      try {
+        const bots = await rpc<MobileBot[]>(
+          "bots/list",
+          {},
+          force ? {} : { cache: "prefer-cache" },
+        );
+        // Apply any successful response that is still the newest applied so far.
+        // A later failed refresh must not discard an earlier success.
+        if (generation < mentionBotsAppliedGeneration.current) return;
+        if (cacheScope !== apiCacheScope()) return;
+        if (targetBotId !== activeBotId.current) return;
+        mentionBotsAppliedGeneration.current = generation;
+        setMentionBots(bots);
+        if (targetBotId) {
+          const next = bots.find((bot) => bot.id === targetBotId);
+          // Read the route name from a ref so renaming does not recreate this
+          // callback (and restart the SSE subscription that depends on it).
+          if (next?.name && next.name !== routeName.current) {
+            router.setParams({ name: next.name });
+          }
         }
+      } catch {
+        // Keep the last known roster if refresh fails.
       }
-    } catch {
-      // Keep the last known roster if refresh fails.
-    }
-  }, [botId, groupId, router]);
+    },
+    [botId, cacheScope, groupId, router],
+  );
 
   useEffect(() => {
     void refreshMentionBots();
-    void rpc<MobileGroup[]>("groups/list")
-      .then(setMentionGroups)
-      .catch(() => setMentionGroups([]));
+    void rpc<MobileGroup[]>("groups/list", {}, { cache: "prefer-cache" })
+      .then((rows) => {
+        if (cacheScope === apiCacheScope()) setMentionGroups(rows);
+      })
+      .catch(() => undefined);
   }, [refreshMentionBots]);
 
   useEffect(() => {
@@ -560,7 +668,7 @@ function Thread() {
     const botNameById = new Map(mentionBots.map((bot) => [bot.id, bot.name]));
     void Promise.all(
       mentionBots.map((bot) =>
-        rpc<Routine[]>("routines/list", { botId: bot.id })
+        rpc<Routine[]>("routines/list", { botId: bot.id }, { cache: "prefer-cache" })
           .then((rows) =>
             rows.map((routine) => ({
               ...routine,
@@ -570,15 +678,17 @@ function Thread() {
           .catch(() => [] as Array<Routine & { botName?: string }>),
       ),
     ).then((lists) => {
-      if (!cancelled) setMentionRoutines(lists.flat());
+      if (!cancelled && cacheScope === apiCacheScope()) setMentionRoutines(lists.flat());
     });
     void Promise.all([
-      rpc<Connection[]>("connections/list").catch(() => [] as Connection[]),
-      rpc<ConnectionCatalogItem[]>("connections/catalog", {}).catch(
+      rpc<Connection[]>("connections/list", {}, { cache: "prefer-cache" }).catch(
+        () => [] as Connection[],
+      ),
+      rpc<ConnectionCatalogItem[]>("connections/catalog", {}, { cache: "prefer-cache" }).catch(
         () => [] as ConnectionCatalogItem[],
       ),
     ]).then(([connections, catalog]) => {
-      if (cancelled) return;
+      if (cancelled || cacheScope !== apiCacheScope()) return;
       const connected = connections.filter((row) => row.status === "connected");
       const options: Array<{
         id: string;
@@ -616,7 +726,12 @@ function Thread() {
   }, [mentionBots]);
 
   function isCurrentTarget(targetBotId: string | undefined, targetGroupId: string | undefined) {
-    return activeBotId.current === targetBotId && activeGroupId.current === targetGroupId;
+    return (
+      mounted.current &&
+      cacheScope === apiCacheScope() &&
+      activeBotId.current === targetBotId &&
+      activeGroupId.current === targetGroupId
+    );
   }
 
   useLayoutEffect(() => {
@@ -709,8 +824,15 @@ function Thread() {
     setError(null);
     void rpc("threads/clear", { botId })
       .then(() => {
+        if (!isCurrentTarget(botId, groupId)) return;
         expandedHistoryThread.current = null;
         pinnedAroundRef.current = null;
+        jumpScrollTarget.current = null;
+        pendingScrollRestore.current = null;
+        scrollOffset.current = 0;
+        scrollBehavior.current.jumpToLatest();
+        setThreadScrollState(scrollBehavior.current.state());
+        setReplyTarget(null);
         historyEpoch.current += 1;
         commitSnap(
           snapRef.current
@@ -794,16 +916,34 @@ function Thread() {
     setBotActionsOpen(true);
   }
 
-  async function refresh() {
-    if (!botId && !groupId) return;
+  async function refresh(applySnapshot = true) {
+    if ((!botId && !groupId) || !isCurrentTarget(botId, groupId)) return;
     const targetBotId = botId;
     const targetGroupId = groupId;
     const epoch = historyEpoch.current;
-    const next = await rpc<MobileSnapshot>(
-      "threads/get",
-      targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! },
-    );
+    const cacheRevision = apiCacheRevision();
+    let next: MobileSnapshot;
+    try {
+      next = await rpc<MobileSnapshot>(
+        "threads/get",
+        targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! },
+      );
+    } catch (err) {
+      if (isCurrentTarget(targetBotId, targetGroupId) && epoch === historyEpoch.current) {
+        // Cached conversations remain useful offline, but access revoked or a deleted
+        // bot must disappear instead of surviving behind a background-refresh error.
+        if (err instanceof MobileRpcError && [401, 403, 404].includes(err.status)) {
+          commitSnap(null);
+          expandedHistoryThread.current = null;
+          setReplyTarget(null);
+        }
+        setRefreshError(err instanceof Error ? err.message : t("Failed to refresh"));
+      }
+      throw err;
+    }
     if (
+      !isCurrentTarget(targetBotId, targetGroupId) ||
+      cacheRevision !== apiCacheRevision() ||
       !shouldApplyMobileThreadRefresh({
         requestEpoch: epoch,
         currentEpoch: historyEpoch.current,
@@ -814,15 +954,23 @@ function Thread() {
       })
     )
       return next;
-    commitSnap(
-      mergeMobileSnapshot(snapRef.current, next, expandedHistoryThread.current === next.threadId),
-    );
+    setRefreshError(null);
+    if (isOlderThreadSnapshot(snapRef.current, next)) return next;
+    if (applySnapshot)
+      commitSnap(
+        mergeMobileSnapshot(snapRef.current, next, expandedHistoryThread.current === next.threadId),
+      );
     return next;
   }
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  const speakFinishedReplyRef = useRef(speakFinishedReply);
+  speakFinishedReplyRef.current = speakFinishedReply;
 
   async function applyMessageJump(target: { botId?: string; groupId?: string; messageId: string }) {
     const threadTarget = target.groupId ? { groupId: target.groupId } : { botId: target.botId! };
     const epoch = historyEpoch.current;
+    const cacheRevision = apiCacheRevision();
     jumpGeneration.current += 1;
     const jumpId = jumpGeneration.current;
     const [snap, page] = await Promise.all([
@@ -834,7 +982,13 @@ function Thread() {
     ]);
     // The epoch check drops a jump that raced a conversation clear (or a bot switch); the
     // generation check drops an older same-thread jump that finished after a newer one.
-    if (epoch !== historyEpoch.current || jumpId !== jumpGeneration.current) return;
+    if (
+      !isCurrentTarget(target.botId, target.groupId) ||
+      cacheRevision !== apiCacheRevision() ||
+      epoch !== historyEpoch.current ||
+      jumpId !== jumpGeneration.current
+    )
+      return;
     if (target.groupId && activeGroupId.current !== target.groupId) return;
     if (target.botId && activeBotId.current !== target.botId) return;
     const targetInPage = page.messages.some((message) => message.id === target.messageId);
@@ -850,10 +1004,22 @@ function Thread() {
       : null;
     jumpScrollTarget.current = targetInPage ? target.messageId : null;
     commitSnap({
-      ...snap,
+      ...(isOlderThreadSnapshot(snapRef.current, snap) ? (snapRef.current ?? snap) : snap),
       messages: targetInPage ? [...page.messages] : snap.messages,
       olderCursor: targetInPage ? page.olderCursor : snap.olderCursor,
     });
+    setRefreshError(null);
+  }
+
+  async function retryRefresh() {
+    try {
+      if (messageId)
+        await applyMessageJump(groupId ? { groupId, messageId } : { botId: botId!, messageId });
+      else await refresh();
+    } catch (err) {
+      if (isCurrentTarget(botId, groupId))
+        setRefreshError(err instanceof Error ? err.message : t("Failed to refresh"));
+    }
   }
 
   async function loadOlderMessages() {
@@ -861,13 +1027,18 @@ function Thread() {
     loadingOlderContent.current = true;
     setLoadingOlder(true);
     const epoch = historyEpoch.current;
+    const cacheRevision = apiCacheRevision();
     try {
       const page = await rpc<MobileMessagePage>("threads/messages", {
         ...(groupId ? { groupId } : { botId: botId! }),
         before: snap.olderCursor,
         includePeerReceipts: true,
       });
-      if (epoch !== historyEpoch.current) {
+      if (
+        !isCurrentTarget(botId, groupId) ||
+        cacheRevision !== apiCacheRevision() ||
+        epoch !== historyEpoch.current
+      ) {
         loadingOlderContent.current = false;
         return;
       }
@@ -882,6 +1053,7 @@ function Thread() {
   }
 
   const markReadIfVisible = useCallback(() => {
+    if (cacheScope !== apiCacheScope() || !mounted.current) return;
     if (AppState.currentState !== "active" || !navigation.isFocused()) return;
     const target = groupId ?? botId;
     if (!target || readVisibleTarget.current === target) return;
@@ -898,7 +1070,7 @@ function Thread() {
     void rpc("threads/markRead", { botId: botId! }).catch(() => {
       if (readVisibleTarget.current === target) readVisibleTarget.current = null;
     });
-  }, [botId, groupId, navigation]);
+  }, [botId, cacheScope, groupId, navigation]);
 
   useEffect(() => {
     if (!notificationThreadId || AppState.currentState !== "active" || !navigation.isFocused())
@@ -928,28 +1100,37 @@ function Thread() {
         // Group thread focus: prior bot screen may stay mounted, so clear any delayed setup.
         cancelFocusPrompt();
       }
-      if (AppState.currentState === "active" && notificationThreadId) {
+      if (AppState.currentState === "active" && activeThreadId.current) {
         void setOpenNotificationThread({
           botId,
-          threadId: notificationThreadId,
+          threadId: activeThreadId.current,
         }).catch(() => undefined);
       }
       void refreshMentionBots();
+      void refreshRef.current(!messageId).catch(() => undefined);
       markReadIfVisible();
-      speakFinishedReply();
+      speakFinishedReplyRef.current();
       return () => {
+        if (cacheScope === apiCacheScope())
+          saveThreadViewState(cacheScope, viewKey, {
+            ...viewState.current,
+            distanceFromLatest: scrollOffset.current,
+            expandedHistoryThreadId: expandedHistoryThread.current,
+          });
         void setOpenNotificationThread(null).catch(() => undefined);
       };
-    }, [botId, markReadIfVisible, notificationThreadId, refreshMentionBots, speakFinishedReply]),
+    }, [botId, cacheScope, groupId, markReadIfVisible, messageId, refreshMentionBots, viewKey]),
   );
 
   useEffect(() => {
     const appState = AppState.addEventListener("change", (state) => {
       if (state === "active") {
-        if (!navigation.isFocused() || !notificationThreadId) return;
+        if (!navigation.isFocused()) return;
+        void refreshRef.current(!messageId).catch(() => undefined);
+        if (!activeThreadId.current) return;
         void setOpenNotificationThread({
           botId,
-          threadId: notificationThreadId,
+          threadId: activeThreadId.current,
         }).catch(() => undefined);
         markReadIfVisible();
         return;
@@ -957,7 +1138,7 @@ function Thread() {
       void setOpenNotificationThread(null).catch(() => undefined);
     });
     return () => appState.remove();
-  }, [botId, markReadIfVisible, navigation, notificationThreadId]);
+  }, [botId, markReadIfVisible, messageId, navigation]);
 
   useEffect(() => {
     if (!botId && !groupId) return;
@@ -965,22 +1146,11 @@ function Thread() {
       pinnedAroundRef.current = null;
       jumpScrollTarget.current = null;
     }
-    expandedHistoryThread.current = null;
     historyEpoch.current += 1;
     const abort = new AbortController();
     void (async () => {
       // Pending search jumps load the around-page separately; avoid replacing it with latest.
-      const next = messageId
-        ? await rpc<MobileSnapshot>("threads/get", groupId ? { groupId } : { botId: botId! }).catch(
-            (err: Error) => {
-              setError(err.message);
-              return null;
-            },
-          )
-        : await refresh().catch((err: Error) => {
-            setError(err.message);
-            return null;
-          });
+      const next = await refresh(!messageId).catch(() => null);
       if (abort.signal.aborted) return;
       let cursor = next?.cursor ?? -1;
       let retryMs = 250;
@@ -990,8 +1160,15 @@ function Thread() {
             groupId ? { groupId } : { botId: botId! },
             cursor,
             (event) => {
+              if (abort.signal.aborted || !isCurrentTarget(botId, groupId)) return;
               cursor = Math.max(cursor, event.seq ?? -1);
               retryMs = 250;
+              if (
+                event.seq !== undefined &&
+                snapRef.current?.cursor !== undefined &&
+                event.seq <= snapRef.current.cursor
+              )
+                return;
               if (
                 event.type === "thread.progress" ||
                 event.type === "agent.tool.called" ||
@@ -1009,19 +1186,25 @@ function Thread() {
                 if (event.type === "thread.cleared") {
                   expandedHistoryThread.current = null;
                   pinnedAroundRef.current = null;
+                  jumpScrollTarget.current = null;
+                  pendingScrollRestore.current = null;
+                  scrollOffset.current = 0;
+                  scrollBehavior.current.jumpToLatest();
+                  setThreadScrollState(scrollBehavior.current.state());
+                  setReplyTarget(null);
                   historyEpoch.current += 1;
                 }
                 commitSnap(applyMobileThreadEvent(snapRef.current, event));
               }
               if (event.type === "bot.updated") {
-                void refreshMentionBots();
+                void refreshMentionBots(true);
               }
               if (event.type === "thread.message.created" && event.payload?.role === "bot") {
                 readVisibleTarget.current = null;
                 markReadIfVisible();
               }
               if (isRunTerminalEvent(event)) {
-                void refreshMentionBots();
+                void refreshMentionBots(true);
                 if (!jumpScrollTarget.current && !expandedHistoryThread.current) {
                   void refresh().catch(() => undefined);
                 }
@@ -1073,23 +1256,11 @@ function Thread() {
     if ((!botId && !groupId) || !messageId) return;
     void applyMessageJump(groupId ? { groupId, messageId } : { botId: botId!, messageId }).catch(
       (err) => {
-        setError(err instanceof Error ? err.message : t("Could not open message"));
+        if (isCurrentTarget(botId, groupId))
+          setRefreshError(err instanceof Error ? err.message : t("Could not open message"));
       },
     );
   }, [botId, groupId, messageId]);
-
-  useEffect(() => {
-    setOutgoing(null);
-    setPendingAttachments((current) => attachmentsForThread(current, threadKey));
-    setDraft("");
-    setMentionQuery(null);
-    setSlashQuery(null);
-    setSelectedSkill(null);
-    setSelectedMentions([]);
-    setReplyTarget(null);
-    setAttachmentNotice(null);
-    setError(null);
-  }, [threadKey]);
 
   function updateDraft(value: string) {
     setDraft(value);
@@ -1180,6 +1351,18 @@ function Thread() {
     const submittedNotice = attachmentNotice;
     const clearOriginComposer = () => {
       const attachmentIds = new Set(attachments.map((attachment) => attachment.id));
+      viewState.current = {
+        ...viewState.current,
+        draft: "",
+        selectedMentions: [],
+        selectedSkill: null,
+        pendingAttachments: viewState.current.pendingAttachments.filter(
+          (item) => !attachmentIds.has(item.id),
+        ),
+        replyTarget: null,
+        attachmentNotice: null,
+      };
+      saveThreadViewState(cacheScope, viewKey, viewState.current);
       setPendingAttachments((current) => current.filter((item) => !attachmentIds.has(item.id)));
       setDraft("");
       setMentionQuery(null);
@@ -1200,14 +1383,23 @@ function Thread() {
     });
     let accepted = false;
     try {
+      const requestContext = await captureApiRequestContext();
+      const ensureOriginScope = () => {
+        if (cacheScope !== apiCacheScope()) throw new Error(t("Request canceled"));
+      };
+      ensureOriginScope();
       if (plan.shouldRunRoutines) {
         const sendNonce = newClientNonce();
         await Promise.all(
           plan.routineIds.map((routineId) =>
-            rpc("routines/testRun", {
-              routineId,
-              clientNonce: `routine-mention:${sendNonce}:${routineId}`,
-            }),
+            rpc(
+              "routines/testRun",
+              {
+                routineId,
+                clientNonce: `routine-mention:${sendNonce}:${routineId}`,
+              },
+              { requestContext },
+            ),
           ),
         );
       }
@@ -1232,15 +1424,21 @@ function Thread() {
       }
       const artifactIds: string[] = [];
       for (const pending of attachments) {
-        const artifact = await rpc<{ id: string }>("artifacts/create", {
-          ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
-          name: pending.name,
-          mimeType: pending.mimeType,
-          contentBase64: pending.contentBase64,
-        });
+        ensureOriginScope();
+        const artifact = await rpc<{ id: string }>(
+          "artifacts/create",
+          {
+            ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
+            name: pending.name,
+            mimeType: pending.mimeType,
+            contentBase64: pending.contentBase64,
+          },
+          { requestContext },
+        );
         artifactIds.push(artifact.id);
       }
       const clientNonce = newClientNonce();
+      ensureOriginScope();
       const sent = await rpc<{ seq: number }>(
         "threads/send",
         groupTarget
@@ -1260,6 +1458,7 @@ function Thread() {
               artifactIds: artifactIds.length ? artifactIds : undefined,
               replyToMessageId: submittedReply?.id,
             },
+        { requestContext },
       );
       accepted = true;
       setOutgoing((current) => (current ? { ...current, seq: sent.seq } : null));
@@ -1281,28 +1480,37 @@ function Thread() {
         await refresh();
       }
     } catch (err) {
-      if (isCurrentTarget(initialBotTarget, initialGroupTarget)) {
-        if (!accepted) {
-          // Keep anything typed or attached while the request was in flight.
-          setDraft((current) => (current ? `${submittedDraft}\n${current}` : submittedDraft));
-          setSelectedSkill((current) => current ?? submittedSkill);
-          setSelectedMentions((current) => [
-            ...submittedMentions,
-            ...current.filter(
-              (item) =>
-                !submittedMentions.some(
-                  (submitted) => mentionChipKey(submitted) === mentionChipKey(item),
-                ),
-            ),
-          ]);
-          setPendingAttachments((current) => [
-            ...attachments,
-            ...current.filter((item) => !attachments.some((submitted) => submitted.id === item.id)),
-          ]);
-          setReplyTarget((current) => current ?? submittedReply);
-          setAttachmentNotice((current) => current ?? submittedNotice);
+      if (!accepted && cacheScope === apiCacheScope()) {
+        if (isCurrentTarget(initialBotTarget, initialGroupTarget))
+          saveThreadViewState(cacheScope, viewKey, viewState.current);
+        const restored = restoreUnsentThreadViewState(
+          cacheScope,
+          viewKey,
+          {
+            ...viewState.current,
+            draft: submittedDraft,
+            selectedSkill: submittedSkill,
+            selectedMentions: submittedMentions,
+            pendingAttachments: attachments,
+            replyTarget: submittedReply,
+            attachmentNotice: submittedNotice,
+          },
+          viewState.current,
+        );
+        if (restored && isCurrentTarget(initialBotTarget, initialGroupTarget)) {
+          // Keep typing done while sending; also retain a failed send if this
+          // screen was closed before the network replied.
+          viewState.current = restored;
+          setDraft(restored.draft);
+          setSelectedSkill(restored.selectedSkill);
+          setSelectedMentions(restored.selectedMentions);
+          setPendingAttachments(restored.pendingAttachments);
+          setReplyTarget(restored.replyTarget);
+          setAttachmentNotice(restored.attachmentNotice);
           setOutgoing(null);
         }
+      }
+      if (isCurrentTarget(initialBotTarget, initialGroupTarget)) {
         setError(err instanceof Error ? err.message : t("Failed to send message"));
       }
     } finally {
@@ -1750,11 +1958,43 @@ function Thread() {
       style={{ flex: 1, backgroundColor: tokens.background, paddingHorizontal: 20 }}
     >
       {error ? <Text style={{ color: tokens.mutedForeground, marginTop: 12 }}>{error}</Text> : null}
+      {refreshError ? (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+            paddingVertical: 8,
+          }}
+        >
+          <Text style={{ color: tokens.mutedForeground, flex: 1 }}>{refreshError}</Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => void retryRefresh()}
+            hitSlop={8}
+            style={{ minHeight: 44, justifyContent: "center" }}
+          >
+            <Text style={{ color: tokens.foreground }}>{t("Retry")}</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {runError ? (
         <Text style={{ color: tokens.destructive, marginTop: 12 }}>{runError}</Text>
       ) : null}
       <ChatScrollGestureContext.Provider value={chatScrollGesture}>
         <View style={{ flex: 1, position: "relative" }}>
+          {!snap && !refreshError ? (
+            <View
+              style={{
+                position: "absolute",
+                inset: 0,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <ActivityIndicator color={tokens.foreground} />
+            </View>
+          ) : null}
           {showPinnedPage ? (
             <GestureDetector gesture={chatScrollGesture}>
               <ScrollView
@@ -1785,6 +2025,7 @@ function Thread() {
                   userDragging.current = true;
                 }}
                 onScroll={(event) => {
+                  scrollOffset.current = Math.max(0, event.nativeEvent.contentOffset.y);
                   if (userDragging.current) updateUserScroll(event);
                 }}
                 onScrollEndDrag={(event) => {
@@ -1794,6 +2035,14 @@ function Thread() {
                 onMomentumScrollEnd={updateUserScroll}
                 onLayout={() => performScroll(scrollBehavior.current.onLayout())}
                 onContentSizeChange={() => {
+                  if (pendingScrollRestore.current !== null && snap) {
+                    const offset = pendingScrollRestore.current;
+                    pendingScrollRestore.current = null;
+                    scrollOffset.current = offset;
+                    scrollBehavior.current.onContentChanged(false, latestMessageId);
+                    scroll.current?.scrollToOffset({ offset, animated: false });
+                    return;
+                  }
                   if (loadingOlderContent.current) {
                     loadingOlderContent.current = false;
                     return;

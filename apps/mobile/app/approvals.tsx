@@ -26,6 +26,7 @@ export default function Approvals() {
       ]);
       return { rules, review };
     }, []),
+    "approvals",
   );
   const [kind, setKind] = useState<ActionApprovalRule["matchKind"]>("category");
   const [effect, setEffect] = useState<ActionApprovalRule["effect"]>("require_approval");

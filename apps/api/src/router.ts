@@ -183,6 +183,7 @@ import {
   promptFocus,
   startOnboarding,
 } from "./onboarding.js";
+import { loadPeerConversationPage, loadPeerMessagePage } from "./peer-message-pages.js";
 import { listSpaceRuns } from "./runs.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
 import { querySpaceSearch } from "./search.js";
@@ -1581,6 +1582,14 @@ export function createRouter(deps: RouterDeps) {
       get: authed.threads.get.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         return threadSnapshot(deps, target);
+      }),
+      peerConversations: authed.threads.peerConversations.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        return loadPeerConversationPage(deps.prisma, target.threadId, input.after);
+      }),
+      peerMessages: authed.threads.peerMessages.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        return loadPeerMessagePage(deps.prisma, target.threadId, input.peerBotId, input.before);
       }),
       messages: authed.threads.messages.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);

@@ -1,6 +1,6 @@
 import { Stack, useFocusEffect } from "expo-router";
-import type { ReactNode } from "react";
-import { useCallback, useRef, useState } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import type { TextInputProps } from "react-native";
 import {
   ActivityIndicator,
@@ -15,6 +15,9 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { t, useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
+import { mobileResourceCache } from "../lib/resource-cache";
+
+const resourceScope = () => mobileResourceCache.scope();
 
 export function SettingsPage({
   title,
@@ -235,25 +238,79 @@ export function confirmRemoval(label: string, action: () => void) {
 }
 
 /** Reload on return from an editor, and ignore loads from a previous screen. */
-export function useSettingsResource<T>(load: () => Promise<T>) {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export function useSettingsResource<T>(load: () => Promise<T>, cacheKey?: string) {
+  const scope = useSyncExternalStore(mobileResourceCache.subscribe, resourceScope, resourceScope);
+  const key = `${scope}|screen:${cacheKey ?? "local"}`;
+  const cached = (): T | null => (cacheKey ? (mobileResourceCache.peek<T>(key) ?? null) : null);
+  const initial = () => ({
+    key,
+    data: cached(),
+    loaded: !!cacheKey && mobileResourceCache.peek<T>(key) !== undefined,
+    updatedAt: mobileResourceCache.writtenAt(key) ?? 0,
+    error: null as string | null,
+    refreshing: false,
+  });
+  const [state, setState] = useState(initial);
+  const current = state.key === key ? state : initial();
+  const stateRef = useRef(current);
+  stateRef.current = current;
   const epoch = useRef(0);
+  const setData: Dispatch<SetStateAction<T | null>> = useCallback(
+    (update) => {
+      if (scope !== resourceScope()) return;
+      setState((previous) => {
+        const value = previous.key === key ? previous.data : cached();
+        const data =
+          typeof update === "function" ? (update as (value: T | null) => T | null)(value) : update;
+        if (cacheKey && data !== null) mobileResourceCache.write(key, data);
+        return { key, data, loaded: true, updatedAt: Date.now(), error: null, refreshing: false };
+      });
+    },
+    [key, scope, cacheKey],
+  );
   const reload = useCallback(async () => {
     const id = ++epoch.current;
-    setLoading(true);
-    setError(null);
+    const revision = mobileResourceCache.version();
+    setState({ ...stateRef.current, key, error: null, refreshing: true });
     try {
-      const next = await load();
-      if (id === epoch.current) setData(next);
+      const next = cacheKey ? await mobileResourceCache.fetch(key, load) : await load();
+      if (
+        id === epoch.current &&
+        scope === resourceScope() &&
+        revision === mobileResourceCache.version()
+      ) {
+        setState({
+          key,
+          data: next,
+          loaded: true,
+          updatedAt: Date.now(),
+          error: null,
+          refreshing: false,
+        });
+      }
     } catch (err) {
-      if (id === epoch.current)
-        setError(err instanceof Error ? err.message : "Could not load settings");
+      if (id === epoch.current && scope === resourceScope()) {
+        const inaccessible =
+          err instanceof Error && "status" in err && [401, 403, 404].includes(Number(err.status));
+        if (inaccessible) mobileResourceCache.remove(key);
+        const expired = Date.now() - stateRef.current.updatedAt > 5 * 60_000;
+        setState({
+          key,
+          data: inaccessible || expired ? null : stateRef.current.data,
+          loaded: true,
+          updatedAt: stateRef.current.updatedAt,
+          error: err instanceof Error ? err.message : t("Could not load settings"),
+          refreshing: false,
+        });
+      }
     } finally {
-      if (id === epoch.current) setLoading(false);
+      if (id === epoch.current && scope === resourceScope()) {
+        setState((previous) =>
+          previous.key === key ? { ...previous, refreshing: false } : previous,
+        );
+      }
     }
-  }, [load]);
+  }, [load, key, scope, cacheKey]);
   useFocusEffect(
     useCallback(() => {
       void reload();
@@ -262,7 +319,14 @@ export function useSettingsResource<T>(load: () => Promise<T>) {
       };
     }, [reload]),
   );
-  return { data, setData, loading, error, reload };
+  return {
+    data: current.data,
+    setData,
+    loading: !current.loaded && (!current.error || current.refreshing),
+    refreshing: current.refreshing,
+    error: current.error,
+    reload,
+  };
 }
 export function useSettingsAction() {
   const [busy, setBusy] = useState(false);

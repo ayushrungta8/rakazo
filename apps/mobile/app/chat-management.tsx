@@ -32,6 +32,7 @@ export default function ChatManagement() {
       ]);
       return { bots: bots.filter((b) => !b.archivedAt), groups, archived };
     }, []),
+    "chat-management",
   );
   async function reorder(index: number, direction: -1 | 1) {
     const bots = [...(resource.data?.bots ?? [])];

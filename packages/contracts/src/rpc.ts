@@ -86,6 +86,12 @@ import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
+import {
+  PeerConversationCursorSchema,
+  PeerConversationPageSchema,
+  PeerMessageCursorSchema,
+  PeerMessagePageSchema,
+} from "./peer-messages.js";
 import { MessageReactionSchema } from "./reactions.js";
 import { RunsListOutputSchema } from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
@@ -289,6 +295,12 @@ export const appContract = {
       }),
     ),
     get: oc.input(threadTarget).output(ThreadSnapshotSchema),
+    peerConversations: oc
+      .input(threadTarget.safeExtend({ after: PeerConversationCursorSchema.optional() }))
+      .output(PeerConversationPageSchema),
+    peerMessages: oc
+      .input(threadTarget.safeExtend({ peerBotId: Id, before: PeerMessageCursorSchema.optional() }))
+      .output(PeerMessagePageSchema),
     messages: oc
       .input(
         threadTarget.safeExtend({

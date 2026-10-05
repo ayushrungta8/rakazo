@@ -34,6 +34,7 @@ import type { EndpointResult } from "./endpoint";
 import { defaultApiBase, normalizeApiBase } from "./endpoint";
 import { t } from "./i18n";
 import { resumeLiveNotifications } from "./live-notifications";
+import { mobileResourceCache, resourceKey } from "./resource-cache";
 import {
   clearSessionToken,
   loadSessionToken,
@@ -60,7 +61,93 @@ let spaceSelectionGeneration = 0;
 
 function bumpSpaceSelectionGeneration(): void {
   spaceSelectionGeneration += 1;
+  mobileResourceCache.resetIdentity();
 }
+
+/** A generation, never a bearer token. Useful for rejecting stale UI work. */
+export function apiCacheScope(): string {
+  return `${currentApiBase()}|${cachedSpaceId}|${mobileResourceCache.scope()}`;
+}
+
+export const subscribeApiCacheScope = mobileResourceCache.subscribe;
+export function apiCacheRevision(): number {
+  return mobileResourceCache.version();
+}
+
+function rpcCacheKey(proc: string, body: unknown) {
+  return `${apiCacheScope()}|rpc:${proc}:${resourceKey(body)}`;
+}
+
+export function peekRpc<T>(proc: string, body: unknown = {}): T | undefined {
+  return mobileResourceCache.peek<T>(rpcCacheKey(proc, body));
+}
+
+export function writeRpcSnapshot<T>(proc: string, body: unknown, value: T): void {
+  mobileResourceCache.write(rpcCacheKey(proc, body), value);
+}
+
+// Only side-effect-free reads may share a request or enter the snapshot cache.
+const CACHED_READ_PROCS = new Set([
+  "spaces/list",
+  "me",
+  "bots/list",
+  "groups/list",
+  "botSections/list",
+  "threads/get",
+  "threads/messages",
+  "threads/peerConversations",
+  "threads/peerMessages",
+  "routines/list",
+  "memory/status",
+  "memory/list",
+  "memory/providerConfig",
+  "agentSkills/list",
+  "agentSkills/get",
+  "mcp/servers/list",
+  "mcp/assignments/all",
+  "mcp/assignments/list",
+  "approvalRules/list",
+  "autoReview/get",
+  "scratchpad/list",
+  "artifacts/listSpace",
+  "artifacts/get",
+  "groups/listArchived",
+  "messaging/status",
+  "messaging/channels/list",
+  "messaging/connections/list",
+  "bots/get",
+  "bots/listArchived",
+  "runs/list",
+  "skills/get",
+  "skills/list",
+  "capabilities/list",
+  "connections/catalog",
+  "connections/list",
+  "connections/tools",
+  "models/list",
+  "models/credentials",
+  "artifacts/getById",
+  "artifacts/listVersions",
+  "integrationSetup/get",
+  "search/query",
+  "voice/catalog",
+  "voice/credentials",
+  "voice/status",
+  "voice/voices",
+  "computer/status",
+  "computer/updates",
+  "computer/screenUrl",
+  "export/bot",
+]);
+
+const CACHE_NEUTRAL_PROCS = new Set([
+  "threads/markRead",
+  "notifications/registerPush",
+  "notifications/unregisterPush",
+  "notifications/dismiss",
+  "aiConsent/status",
+  "health",
+]);
 
 function responseErrorMessage(body: unknown, fallback: string): string {
   return typeof body === "object" && body && "message" in body
@@ -102,6 +189,8 @@ export async function loadApiBase() {
 }
 
 export async function selectSpace(id: string) {
+  // Opening another chat in the current Space is navigation, not a new identity.
+  if (id && id === cachedSpaceId) return true;
   if (!(await clearStoredValue(SPACE_ROLLBACK_KEY))) return false;
   // Claim memory before persisting: recovery paths reconcile against the
   // in-memory selection, so a durable write must never precede its owner.
@@ -328,6 +417,7 @@ export async function saveApiBase(input: string): Promise<EndpointResult> {
     return { ok: false, error: t("Could not save the server URL") };
   }
   cachedApiBase = parsed.url;
+  if (parsed.url !== previous) mobileResourceCache.resetIdentity();
   await clearStoredValue(SPACE_ROLLBACK_KEY);
   return parsed;
 }
@@ -350,6 +440,7 @@ export async function resetApiBase(): Promise<EndpointResult> {
     }
   }
   cachedApiBase = url;
+  if (url !== previous) mobileResourceCache.resetIdentity();
   await clearStoredValue(SPACE_ROLLBACK_KEY);
   return { ok: true, url };
 }
@@ -552,15 +643,69 @@ export async function deleteAccount(password: string) {
   await clearSpace();
 }
 
+type RpcOptions = {
+  signal?: AbortSignal;
+  timeoutMs?: number | null;
+  requestContext?: ApiRequestContext;
+  skipSpaceAuthRecovery?: boolean;
+  cache?: "prefer-cache";
+};
+
+export class MobileRpcError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "MobileRpcError";
+  }
+}
+
 export async function rpc<T>(
   proc: string,
   body: unknown = {},
-  options: {
-    signal?: AbortSignal;
-    timeoutMs?: number | null;
-    requestContext?: ApiRequestContext;
-    skipSpaceAuthRecovery?: boolean;
-  } = {},
+  options: RpcOptions = {},
+): Promise<T> {
+  // Initialize the session identity before assigning request/cache ownership.
+  await loadSessionToken();
+  const scope = apiCacheScope();
+  const cacheable =
+    CACHED_READ_PROCS.has(proc) && !options.requestContext && !options.skipSpaceAuthRecovery;
+  const key = rpcCacheKey(proc, body);
+  if (cacheable && options.cache === "prefer-cache") {
+    const cached = mobileResourceCache.peek<T>(key, 15_000);
+    if (cached !== undefined) return cached;
+  }
+  const load = async () => {
+    let result: T;
+    try {
+      result = await rpcUncached<T>(proc, body, options);
+    } catch (error) {
+      if (
+        scope === apiCacheScope() &&
+        error instanceof MobileRpcError &&
+        [401, 403, 404].includes(error.status)
+      ) {
+        mobileResourceCache.invalidate();
+      }
+      throw error;
+    }
+    if (scope === apiCacheScope() && !cacheable && !CACHE_NEUTRAL_PROCS.has(proc)) {
+      mobileResourceCache.invalidate();
+    }
+    return result;
+  };
+  // A caller-owned cancellation/deadline must never cancel someone else's read.
+  if (cacheable && !options.signal && options.timeoutMs === undefined) {
+    return mobileResourceCache.fetch(key, load);
+  }
+  return load();
+}
+
+async function rpcUncached<T>(
+  proc: string,
+  body: unknown = {},
+  options: RpcOptions = {},
 ): Promise<T> {
   const requestSpaceGeneration = spaceSelectionGeneration;
   const uses = aiDataUsesForProcedure(proc, body);
@@ -697,9 +842,9 @@ export async function rpc<T>(
           throw retryError;
         }
         if (!selectedSpaceId()) await clearStaleSpaceSelection();
-        throw new Error(message);
+        throw new MobileRpcError(message, res.status);
       }
-      throw new Error(message);
+      throw new MobileRpcError(message, res.status);
     }
     return parsed.json as T;
   } finally {

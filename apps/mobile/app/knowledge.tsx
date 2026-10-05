@@ -28,6 +28,7 @@ export default function Knowledge() {
       ]);
       return { documents, skills };
     }, [botId]),
+    `knowledge:${botId ?? "user"}`,
   );
   const [document, setDocument] = useState<MemoryDocument | null>(null);
   const [skill, setSkill] = useState<AgentSkill | "new" | null>(null);

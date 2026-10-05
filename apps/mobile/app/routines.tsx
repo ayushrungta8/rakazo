@@ -28,6 +28,7 @@ export default function Routines() {
       () => (botId ? rpc<Routine[]>("routines/list", { botId }) : Promise.resolve([])),
       [botId],
     ),
+    `routines:${botId ?? ""}`,
   );
   const action = useSettingsAction();
   const focused = useRef(false);

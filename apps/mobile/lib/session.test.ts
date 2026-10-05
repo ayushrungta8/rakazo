@@ -78,6 +78,20 @@ describe("mobile session storage", () => {
 
     await expect(snapshotSessionToken()).resolves.toEqual({ ok: false });
   });
+
+  it("rejects a delayed secure-store token read after sign-out", async () => {
+    let finish!: (value: string) => void;
+    vi.mocked(SecureStore.getItemAsync).mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = snapshotSessionToken();
+    await clearSessionToken();
+    finish("old-token");
+    await expect(pending).resolves.toEqual({ ok: true, value: "" });
+  });
 });
 
 describe("auth response token parsing", () => {

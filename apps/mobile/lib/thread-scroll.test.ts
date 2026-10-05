@@ -60,4 +60,23 @@ describe("mobile thread initial scroll", () => {
     expect(behavior.jumpToLatest()).toBe("smooth");
     expect(behavior.state()).toEqual({ detached: false, unread: false });
   });
+
+  it("keeps a restored scroll position when layout arrives before cached content", () => {
+    const behavior = new ThreadScrollBehavior();
+    behavior.openThread("thread-1");
+    behavior.onUserScroll(600);
+    expect(behavior.onLayout()).toBe(null);
+    expect(behavior.onContentChanged(false, "m1")).toBe(null);
+    expect(behavior.onContentChanged(false, "m2")).toBe(null);
+    expect(behavior.state()).toEqual({ detached: true, unread: true });
+  });
+
+  it("keeps a restored scroll position when cached content arrives before layout", () => {
+    const behavior = new ThreadScrollBehavior();
+    behavior.openThread("thread-1");
+    behavior.onUserScroll(600);
+    expect(behavior.onContentChanged(false, "m1")).toBe(null);
+    expect(behavior.onLayout()).toBe(null);
+    expect(behavior.state()).toEqual({ detached: true, unread: false });
+  });
 });

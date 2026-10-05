@@ -24,6 +24,7 @@ export default function Scratchpad() {
       () => rpc<ScratchpadItem[]>("scratchpad/list", { botId, includeDone: true }),
       [botId],
     ),
+    `scratchpad:${botId}`,
   );
   const [open, setOpen] = useState<ScratchpadItem | "new" | null>(null);
   const [title, setTitle] = useState("");

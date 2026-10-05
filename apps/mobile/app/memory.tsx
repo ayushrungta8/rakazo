@@ -24,6 +24,7 @@ export default function Memory() {
   const [connecting, setConnecting] = useState(false);
   const resource = useSettingsResource(
     useCallback(() => rpc<SpaceMemoryConfig | null>("memory/providerConfig"), []),
+    "memory-setup",
   );
   const [provider, setProvider] = useState("supermemory");
   const [mode, setMode] = useState("cloud");
