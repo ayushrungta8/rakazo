@@ -20,6 +20,8 @@ export type ScratchpadRow = {
   notes: string;
   createdAt: Date;
   updatedAt: Date;
+  commitment?: unknown;
+  reviewAt?: Date | null;
 };
 
 export function mapScratchpadItem(row: ScratchpadRow) {
@@ -31,6 +33,9 @@ export function mapScratchpadItem(row: ScratchpadRow) {
     notes: row.notes,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    ...(row.commitment
+      ? { commitment: row.commitment, reviewAt: row.reviewAt?.toISOString() ?? null }
+      : {}),
   };
 }
 
@@ -129,6 +134,12 @@ export async function updateScratchpadItemFromTool(
     },
   });
   if (!existing) return { error: "Scratchpad item not found." };
+
+  if (existing.commitment)
+    return {
+      error:
+        "Use commitment_update for this item so its outcome, waiting state and review time stay consistent. Done requires completionEvidence; a blocker is not completion.",
+    };
 
   const data: { title?: string; status?: string; notes?: string } = {};
   if (input.title !== undefined) {

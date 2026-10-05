@@ -61,6 +61,7 @@ import {
   mapScratchpadItem,
   modelCredentialAuthKindsForSpace,
   modelCredentialDto,
+  parseCommitment,
   pickReusableConnection,
   planLiveConnectionSync,
   prepareApiInstall,
@@ -2792,12 +2793,27 @@ export function createRouter(deps: RouterDeps) {
         if (input.status !== undefined && !isScratchpadStatus(input.status)) {
           throw new ORPCError("BAD_REQUEST", { message: "Invalid scratchpad status." });
         }
+        const commitment = parseCommitment(existing.commitment);
         const row = await deps.prisma.scratchpadItem.update({
           where: { id: existing.id },
           data: {
             ...(input.title !== undefined ? { title: input.title.trim() } : {}),
             ...(input.status !== undefined ? { status: input.status } : {}),
             ...(input.notes !== undefined ? { notes: input.notes.trim() } : {}),
+            ...(commitment && input.status !== undefined
+              ? {
+                  commitment: {
+                    ...commitment,
+                    completionEvidence:
+                      input.status === "done"
+                        ? "Marked complete by the user in the scratchpad."
+                        : "",
+                  },
+                  reviewAt:
+                    input.status === "open" ? new Date(Date.now() + 24 * 60 * 60 * 1_000) : null,
+                  reviewCount: 0,
+                }
+              : {}),
           },
         });
         return mapScratchpadItem(row);

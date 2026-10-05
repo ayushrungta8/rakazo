@@ -179,6 +179,13 @@ import { executeCloudAgentTool } from "./cloud-agent-service.js";
 import { validCloudAgentArgs } from "./cloud-agent-tools.js";
 import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import {
+  COMMITMENT_REVIEW_TOOL_LIMIT,
+  isCommitmentReview,
+  listCommitments,
+  trackCommitment,
+  updateCommitment,
+} from "./commitments.js";
+import {
   collectLogIds,
   mergeConnectedPlugins,
   needsLivePluginSync,
@@ -346,6 +353,7 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "recall_memory",
   "schedule_list",
   "scratchpad_list",
+  "commitment_list",
   "skill_read",
   "web_search",
   "web_fetch",
@@ -1376,6 +1384,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           peerMessage?.repliesToRequest,
         );
         const allowSilentEmptyRun =
+          isCommitmentReview(run.clientNonce) ||
           allowSilentPeerMessage ||
           messagingChannelRun ||
           runAllowsSilentEmpty(run.trigger, peerMessage);
@@ -1798,12 +1807,29 @@ export function createRunExecutor(deps: ExecutorDeps) {
           return occurrence;
         };
 
+        let commitmentDelegationSent = false;
         const applyTool = async (
           name: string,
           args: Record<string, unknown>,
           executionId: string,
         ) => {
           context.signal.throwIfAborted();
+          if (
+            isCommitmentReview(run.clientNonce) &&
+            ["commitment_track", "schedule_create", "spawn_bot"].includes(name)
+          )
+            return {
+              error:
+                "A commitment review must update its existing item; it cannot create replacement work, schedules or bots.",
+            };
+          if (isCommitmentReview(run.clientNonce) && name === "message_bot") {
+            if (args.intent !== "request" || commitmentDelegationSent)
+              return {
+                error:
+                  "A review can send one specific internal request, without acknowledgement or FYI loops.",
+              };
+            commitmentDelegationSent = true;
+          }
           if (handedOff) {
             return { error: "This stage was handed off. End the turn without more tool calls." };
           }
@@ -1990,7 +2016,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           const viaConnector = !BUILTIN_AGENT_TOOL_NAMES.has(name);
           const requiresUnattendedApproval = unattendedTriggerToolRequiresApproval(
-            run.trigger,
+            isCommitmentReview(run.clientNonce) && name !== "message_bot" ? "webhook" : run.trigger,
             name,
             viaConnector,
           );
@@ -2764,6 +2790,55 @@ export function createRunExecutor(deps: ExecutorDeps) {
               botId: bot.id,
               includeDone: Boolean(args.includeDone),
             });
+          }
+          if (name === "commitment_list") {
+            return listCommitments(
+              deps,
+              { spaceId: run.spaceId, botId: bot.id, userId: run.userId },
+              typeof args.itemId === "string" ? args.itemId : undefined,
+            );
+          }
+          if (name === "commitment_track") {
+            if (
+              !(
+                run.trigger === "user" ||
+                run.trigger === "messaging" ||
+                (run.trigger === "follow_up" && run.sourceMessageId)
+              )
+            )
+              return finish({
+                error:
+                  "Only a direct user request can originate a new commitment. Update an existing item for delegated results or background findings.",
+              });
+            return finish(
+              await trackCommitment(
+                deps,
+                {
+                  spaceId: run.spaceId,
+                  botId: bot.id,
+                  userId: run.userId,
+                  runId,
+                },
+                args,
+              ),
+            );
+          }
+          if (name === "commitment_update") {
+            return finish(
+              await updateCommitment(
+                deps,
+                {
+                  spaceId: run.spaceId,
+                  botId: bot.id,
+                  userId: run.userId,
+                  runId,
+                  userInitiated:
+                    run.trigger === "user" ||
+                    (run.trigger === "follow_up" && Boolean(run.sourceMessageId)),
+                },
+                args,
+              ),
+            );
           }
           if (name === "scratchpad_add") {
             const created = await addScratchpadItemFromTool(deps, {
@@ -3824,6 +3899,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
               resumeFromCheckpoint: takeoverResume?.checkpoint,
               script,
               allowSilentEmpty: allowSilentEmptyRun,
+              toolCallLimit: isCommitmentReview(run.clientNonce)
+                ? COMMITMENT_REVIEW_TOOL_LIMIT
+                : undefined,
               emptyResponseText,
               executeTool: scripted ? undefined : applyTool,
               resolveModel: scripted

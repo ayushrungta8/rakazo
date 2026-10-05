@@ -255,7 +255,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 }));
 
 import { toolCompletionAuditPayload } from "./executor.js";
-import { maxToolCallsPerTurn, PiAgentRuntime } from "./pi-runtime.js";
+import { effectiveToolCallLimit, maxToolCallsPerTurn, PiAgentRuntime } from "./pi-runtime.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
 
 const destinationTool: ConnectorTool = {
@@ -1114,6 +1114,40 @@ describe("Pi connector tool dispatch", () => {
     expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: "abc" })).toBe(0);
     expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: "80" })).toBe(80);
     expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: " 12.9 " })).toBe(12);
+  });
+
+  it("enforces a per-run fuse without changing the operator default", async () => {
+    delete process.env.MAX_TOOL_CALLS_PER_TURN;
+    fakeAgentState.mode = "parent-limit";
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const events: unknown[] = [];
+    for await (const event of new PiAgentRuntime().run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "review-limited",
+        prompt: "review",
+        instructions: "Use shell.",
+        history: [],
+        tools: [shellTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        toolCallLimit: 16,
+        executeTool,
+      },
+      {
+        operationId: "review",
+        traceId: "review",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    ))
+      events.push(event);
+    expect(executeTool).toHaveBeenCalledTimes(16);
+    expect(events.at(-1)).toEqual(expect.objectContaining({ type: "done" }));
+    expect(maxToolCallsPerTurn({})).toBe(0);
+    expect(effectiveToolCallLimit(16, { MAX_TOOL_CALLS_PER_TURN: "5" })).toBe(5);
+    expect(effectiveToolCallLimit(16, { MAX_TOOL_CALLS_PER_TURN: "100" })).toBe(16);
   });
 
   it("lets a parallel tool batch finish before the optional fuse aborts", async () => {

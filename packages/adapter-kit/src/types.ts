@@ -396,6 +396,8 @@ export interface AgentRunRequest {
    * When set, skip synthetic empty-turn fallbacks (including after tools).
    */
   allowSilentEmpty?: boolean;
+  /** Per-run fuse shared with nested agents. Cannot increase the operator's limit. */
+  toolCallLimit?: number;
   /** Contextual fallback when a non-silent run produces no written response. */
   emptyResponseText?: string;
   executeTool?: (

@@ -115,6 +115,18 @@ export function maxToolCallsPerTurn(env: NodeJS.ProcessEnv = process.env): numbe
   return Math.floor(parsed);
 }
 
+export function effectiveToolCallLimit(
+  requested?: number,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const operator = maxToolCallsPerTurn(env);
+  const requestedLimit =
+    requested && Number.isFinite(requested) && requested >= 1 ? Math.floor(requested) : 0;
+  return operator && requestedLimit
+    ? Math.min(operator, requestedLimit)
+    : operator || requestedLimit;
+}
+
 export interface PiAgentRuntimeOptions {
   /** Directory where Pi JSONL sessions are written. Omit to disable recording. */
   sessionRoot?: string;
@@ -195,7 +207,7 @@ export class PiAgentRuntime implements AgentRuntime {
         const toolDefs = request.tools.length ? request.tools : builtinAgentTools;
         const nestedAgents = new Set<Agent>();
         const completionModel = modelForCompletion(model, request.model.maxTokens);
-        trackedBudget = toolCallBudgetFor(request.runId);
+        trackedBudget = toolCallBudgetFor(request.runId, request.toolCallLimit);
         const host: ToolHost = {
           queue,
           request,
@@ -1781,17 +1793,17 @@ function toolCallBudgetExceededMessage(limit: number) {
   return `I stopped after reaching the limit of ${limit} tool calls in this turn. Send another message to continue.`;
 }
 
-function toolCallBudgetFor(runId: string): ToolCallBudget {
+function toolCallBudgetFor(runId: string, requestedLimit?: number): ToolCallBudget {
   const existing = toolCallBudgetsByRun.get(runId);
   if (existing) {
     existing.inFlight = 0;
-    existing.limit = maxToolCallsPerTurn();
+    existing.limit = effectiveToolCallLimit(requestedLimit);
     return existing;
   }
   const budget: ToolCallBudget = {
     count: 0,
     exceeded: false,
-    limit: maxToolCallsPerTurn(),
+    limit: effectiveToolCallLimit(requestedLimit),
     inFlight: 0,
   };
   if (budget.limit > 0) toolCallBudgetsByRun.set(runId, budget);

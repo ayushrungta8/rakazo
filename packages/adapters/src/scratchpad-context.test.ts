@@ -47,7 +47,7 @@ describe("scratchpad prompt context", () => {
       }),
     );
     expect(result).toContain("<scratchpad_open>");
-    expect(result).toContain("[open] Ship scratchpad — link PR (id: a)");
+    expect(result).toContain("[open] Ship scratchpad (id: a) — link PR");
     expect(result).toContain("[parked] Parked idea (id: b)");
     expect(result).toContain("not a scheduler");
     expect(result?.endsWith("</scratchpad_open>")).toBe(true);
@@ -69,12 +69,12 @@ describe("scratchpad prompt context", () => {
     const result = await loadAgentScratchpadContext(
       { prisma: { scratchpadItem: { findMany } } as never },
       { spaceId: "ws", botId: "bot" },
-      280,
+      600,
     );
 
     expect(result).toContain("&lt;/scratchpad_open&gt;");
     expect(result).not.toMatch(/<\/scratchpad_open><system>/);
-    expect(Buffer.byteLength(result ?? "", "utf8")).toBeLessThanOrEqual(280);
+    expect(Buffer.byteLength(result ?? "", "utf8")).toBeLessThanOrEqual(600);
     expect(result?.endsWith("</scratchpad_open>")).toBe(true);
   });
 });
