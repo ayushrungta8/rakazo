@@ -89,4 +89,22 @@ describe("bounded peer activity queries", () => {
       nextCursor: null,
     });
   });
+
+  it("formats complete Markdown links before truncating a bounded summary", async () => {
+    const $queryRaw = vi.fn(async (_query: unknown) => [
+      {
+        historyGeneration: 0,
+        peerBotId: "peer",
+        peerBotName: "Specialist",
+        lastSeq: 5,
+        lastAt: new Date("2026-01-01T00:00:00.000Z"),
+        lastDirection: "received",
+        lastText: `**Schedule confirmed.** Read [the calendar](https://example.test/${"long/".repeat(80)})`,
+      },
+    ]);
+    const page = await loadPeerConversationPage({ $queryRaw } as unknown as PrismaClient, "thread");
+    expect(page.conversations[0]?.lastText).toBe("Schedule confirmed. Read the calendar");
+    const query = $queryRaw.mock.calls[0]![0] as { text: string };
+    expect(query.text).toContain("left(b.block->>'text', 4096)");
+  });
 });

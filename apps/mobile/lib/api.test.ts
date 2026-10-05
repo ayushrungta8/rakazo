@@ -55,6 +55,24 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function stubReasonlessAbortController(): void {
+  // Android's abort-controller polyfill ignores the reason argument and has no
+  // signal.reason. Preserve real events/cancellation while matching that API.
+  const OriginalAbortController = globalThis.AbortController;
+  vi.stubGlobal(
+    "AbortController",
+    class extends OriginalAbortController {
+      constructor() {
+        super();
+        Object.defineProperty(this.signal, "reason", { value: undefined });
+      }
+      override abort(): void {
+        super.abort();
+      }
+    },
+  );
+}
+
 describe("mobile API authentication", () => {
   beforeEach(async () => {
     vi.restoreAllMocks();
@@ -230,58 +248,124 @@ describe("mobile API authentication", () => {
     expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
   });
 
-  it("times out and cancels a stalled sign-in response body", async () => {
+  it.each([false, true])(
+    "times out a stalled sign-in body (reason-less signal: %s)",
+    async (native) => {
+      vi.useFakeTimers();
+      if (native) stubReasonlessAbortController();
+      const cancel = vi.fn();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(new ReadableStream({ cancel }))),
+      );
+
+      const pending = signIn("ada@example.com", "correct horse");
+      const rejection = expect(pending).rejects.toThrow("Request timed out");
+      await vi.advanceTimersByTimeAsync(8_000);
+
+      await rejection;
+      expect(cancel).toHaveBeenCalledOnce();
+      expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true])(
+    "reports an rpc fetch timeout (reason-less signal: %s)",
+    async (native) => {
+      vi.useFakeTimers();
+      if (native) stubReasonlessAbortController();
+      vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          (_input: unknown, init?: { signal?: AbortSignal }) =>
+            new Promise((_resolve, reject) => {
+              init?.signal?.addEventListener("abort", () =>
+                reject(new Error("fetch failed: FetchRequestCanceledException")),
+              );
+            }),
+        ),
+      );
+
+      const pending = rpc("computer/status", { botId: "bot" });
+      const rejection = expect(pending).rejects.toThrow("Request timed out");
+      await vi.advanceTimersByTimeAsync(8_000);
+      await rejection;
+    },
+  );
+
+  it.each([false, true])("reports an rpc body timeout (reason-less signal: %s)", async (native) => {
     vi.useFakeTimers();
+    if (native) stubReasonlessAbortController();
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
     const cancel = vi.fn();
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(new ReadableStream({ cancel }))),
     );
 
-    const pending = signIn("ada@example.com", "correct horse");
+    const pending = rpc("computer/status", { botId: "bot" });
     const rejection = expect(pending).rejects.toThrow("Request timed out");
     await vi.advanceTimersByTimeAsync(8_000);
-
     await rejection;
     expect(cancel).toHaveBeenCalledOnce();
-    expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
   });
 
-  it("reports an rpc that hit its timeout as a timeout, not as a canceled fetch", async () => {
+  it("retains reason-less caller cancellation when its deadline subsequently fires", async () => {
     vi.useFakeTimers();
+    stubReasonlessAbortController();
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+    let rejectFetch: (error: Error) => void = () => undefined;
     vi.stubGlobal(
       "fetch",
       vi.fn(
-        (_input: unknown, init?: { signal?: AbortSignal }) =>
+        () =>
           new Promise((_resolve, reject) => {
-            init?.signal?.addEventListener("abort", () =>
-              reject(new Error("fetch failed: FetchRequestCanceledException")),
-            );
+            rejectFetch = reject;
           }),
       ),
     );
-
-    const pending = rpc("computer/status", { botId: "bot" });
-    const rejection = expect(pending).rejects.toThrow("Request timed out");
+    const external = new AbortController();
+    const pending = rpc("computer/status", { botId: "bot" }, { signal: external.signal });
+    const rejection = expect(pending).rejects.toThrow("Request canceled");
+    await vi.advanceTimersByTimeAsync(0);
+    external.abort();
     await vi.advanceTimersByTimeAsync(8_000);
+    rejectFetch(new Error("fetch failed: Fetch request has been canceled"));
     await rejection;
   });
 
-  it("reports a stalled rpc response body as a timeout", async () => {
-    vi.useFakeTimers();
+  it.each([
+    "fetch failed: Fetch request has been canceled",
+    "fetch failed: FetchRequestCanceledException",
+    "Failed to fetch",
+    "Network request failed",
+    "Load failed",
+  ])("uses readable network copy for transport failure %s", async (message) => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
-    const cancel = vi.fn();
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response(new ReadableStream({ cancel }))),
+      vi.fn(async () => {
+        throw new Error(message);
+      }),
     );
+    await expect(rpc("computer/status", { botId: "bot" })).rejects.toThrow(
+      "Could not reach that server",
+    );
+  });
 
-    const pending = rpc("computer/status", { botId: "bot" });
-    const rejection = expect(pending).rejects.toThrow("Request timed out");
-    await vi.advanceTimersByTimeAsync(8_000);
-    await rejection;
-    expect(cancel).toHaveBeenCalledOnce();
+  it("preserves server error messages even when they resemble a fetch failure", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("session-token");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({ error: { message: "fetch failed: upstream unavailable" } }, { status: 503 }),
+      ),
+    );
+    await expect(rpc("computer/status", { botId: "bot" })).rejects.toMatchObject({
+      message: "fetch failed: upstream unavailable",
+      status: 503,
+    });
   });
 
   it("reports a caller's cancellation with the caller's reason", async () => {

@@ -205,6 +205,7 @@ import {
 } from "./thread-message-pages.js";
 import {
   reactToThreadMessage,
+  resolveReadThreadTarget,
   resolveThreadTarget,
   sendThreadMessage,
   setThreadUnreadState,
@@ -1576,23 +1577,23 @@ export function createRouter(deps: RouterDeps) {
     },
     threads: {
       head: authed.threads.head.handler(async ({ context, input }) => {
-        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        const target = await resolveReadThreadTarget(deps.prisma, context.actor, input);
         return threadHead(deps.prisma, target);
       }),
       get: authed.threads.get.handler(async ({ context, input }) => {
-        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        const target = await resolveReadThreadTarget(deps.prisma, context.actor, input);
         return threadSnapshot(deps, target);
       }),
       peerConversations: authed.threads.peerConversations.handler(async ({ context, input }) => {
-        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        const target = await resolveReadThreadTarget(deps.prisma, context.actor, input);
         return loadPeerConversationPage(deps.prisma, target.threadId, input.after);
       }),
       peerMessages: authed.threads.peerMessages.handler(async ({ context, input }) => {
-        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        const target = await resolveReadThreadTarget(deps.prisma, context.actor, input);
         return loadPeerMessagePage(deps.prisma, target.threadId, input.peerBotId, input.before);
       }),
       messages: authed.threads.messages.handler(async ({ context, input }) => {
-        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        const target = await resolveReadThreadTarget(deps.prisma, context.actor, input);
         return loadMessagePage(
           deps.prisma,
           target.threadId,
@@ -1604,7 +1605,7 @@ export function createRouter(deps: RouterDeps) {
         );
       }),
       subscribe: authed.threads.subscribe.handler(async function* ({ context, input }) {
-        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        const target = await resolveReadThreadTarget(deps.prisma, context.actor, input);
         const peerRunCache = new Map<string, Promise<boolean>>();
         const internalRunCache = new Map<string, Promise<boolean>>();
         for await (const event of deps.events.follow(

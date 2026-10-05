@@ -317,6 +317,22 @@ export async function resolveThreadTarget(
   throw new IsolationError();
 }
 
+/** Missing and inaccessible chats share a definitive response, without revealing ownership. */
+export async function resolveReadThreadTarget(
+  prisma: PrismaClient,
+  actor: Actor,
+  input: { botId?: string; groupId?: string },
+): Promise<ThreadTarget> {
+  try {
+    return await resolveThreadTarget(prisma, actor, input);
+  } catch (error) {
+    if (error instanceof IsolationError) {
+      throw new ORPCError("NOT_FOUND", { message: "Chat not found" });
+    }
+    throw error;
+  }
+}
+
 export async function threadHead(prisma: PrismaClient, target: ThreadTarget) {
   const latest = await prisma.event.findFirst({
     where: { threadId: target.threadId },

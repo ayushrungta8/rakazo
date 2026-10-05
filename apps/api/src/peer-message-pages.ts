@@ -5,20 +5,12 @@ import type {
   PeerMessageCursor,
   PeerMessagePage,
 } from "@rakazo/contracts";
+import { truncatedPlainText } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma } from "@rakazo/db";
 
 export const PEER_MESSAGE_PAGE_SIZE = 40;
 export const PEER_CONVERSATION_PAGE_SIZE = 30;
-
-function summaryPreview(text: string): string {
-  let preview = "";
-  for (const char of text) {
-    if (preview.length + char.length > 160) break;
-    preview += char;
-  }
-  return preview;
-}
 
 type ReceiptRow = Omit<PeerActivityMessage, "createdAt"> & {
   createdAt: Date;
@@ -112,7 +104,7 @@ export async function loadPeerConversationPage(
           CASE WHEN b.block->>'kind' = 'bot_message_sent'
             THEN b.block->>'toBotName' ELSE b.block->>'fromBotName' END AS "peerBotName",
           CASE WHEN b.block->>'kind' = 'bot_message_sent' THEN 'sent' ELSE 'received' END AS direction,
-          left(b.block->>'text', 160) AS text
+          left(b.block->>'text', 4096) AS text
         FROM messages m
         CROSS JOIN LATERAL jsonb_array_elements(m.blocks) WITH ORDINALITY AS b(block, ordinality)
         WHERE m."threadId" = ${threadId}
@@ -143,8 +135,7 @@ export async function loadPeerConversationPage(
     conversations: pageRows.map(({ historyGeneration: _, lastAt, lastText, ...row }) => ({
       ...row,
       lastAt: lastAt.toISOString(),
-      // PostgreSQL counts Unicode code points; contract limits count UTF-16 units.
-      lastText: summaryPreview(lastText),
+      lastText: truncatedPlainText(lastText, 160),
     })),
     nextCursor:
       summaries.length > PEER_CONVERSATION_PAGE_SIZE && last

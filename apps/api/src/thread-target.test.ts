@@ -6,12 +6,49 @@ import { describe, expect, it, vi } from "vitest";
 import {
   cancelSupersededQueuedRuns,
   reactToThreadMessage,
+  resolveReadThreadTarget,
   sendThreadMessage,
   stopThreadRuns,
   type ThreadTarget,
   threadHead,
   threadSnapshot,
 } from "./thread-target.js";
+
+describe("read thread target access", () => {
+  const actor = { spaceId: "space", userId: "user" } as Actor;
+  it("maps a missing or inaccessible bot to 404 using the existing owner and Space filter", async () => {
+    const findFirst = vi.fn(async () => null);
+    const prisma = { bot: { findFirst } } as unknown as PrismaClient;
+    await expect(
+      resolveReadThreadTarget(prisma, actor, { botId: "missing" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "missing", spaceId: "space", userId: "user", archivedAt: null },
+      }),
+    );
+  });
+  it("retains an authorized target", async () => {
+    const bot = { id: "bot", thread: { id: "thread" } };
+    const prisma = { bot: { findFirst: vi.fn(async () => bot) } } as unknown as PrismaClient;
+    await expect(resolveReadThreadTarget(prisma, actor, { botId: "bot" })).resolves.toMatchObject({
+      kind: "bot",
+      botId: "bot",
+      threadId: "thread",
+    });
+  });
+  it("does not classify a database failure as deleted content", async () => {
+    const failure = new Error("Synthetic database failure");
+    const prisma = {
+      bot: {
+        findFirst: vi.fn(async () => {
+          throw failure;
+        }),
+      },
+    } as unknown as PrismaClient;
+    await expect(resolveReadThreadTarget(prisma, actor, { botId: "bot" })).rejects.toBe(failure);
+  });
+});
 
 // Passthrough mock: every hint derives for real except the sentinel that
 // exercises the "derivation must never cost the send" path.

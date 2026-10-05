@@ -155,6 +155,18 @@ function responseErrorMessage(body: unknown, fallback: string): string {
     : fallback;
 }
 
+function mobileTransportError(error: unknown): unknown {
+  if (
+    error instanceof Error &&
+    /^(?:fetch failed(?::|$)|failed to fetch$|network request failed$|load failed$)/i.test(
+      error.message,
+    )
+  ) {
+    return new Error(t("Could not reach that server"), { cause: error });
+  }
+  return error;
+}
+
 export function currentApiBase() {
   const parsed = normalizeApiBase(cachedApiBase ?? defaultApiBase());
   if (!parsed.ok) throw new Error(parsed.error);
@@ -557,7 +569,8 @@ async function fetchMobileJson<T>(
   invalidJsonFallback?: T,
 ): Promise<{ response: Response; body: T }> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new Error("Request timed out")), RPC_TIMEOUT_MS);
+  const timeoutError = new Error(t("Request timed out"));
+  const timer = setTimeout(() => controller.abort(timeoutError), RPC_TIMEOUT_MS);
   try {
     const response = await withAbort(
       fetch(input, { ...init, signal: controller.signal }),
@@ -576,6 +589,10 @@ async function fetchMobileJson<T>(
       }
       throw error;
     }
+  } catch (error) {
+    // React Native's AbortController ignores abort(reason). Keep the deadline's
+    // cause independently so a canceled body read still reports the timeout.
+    throw controller.signal.aborted ? timeoutError : mobileTransportError(error);
   } finally {
     clearTimeout(timer);
   }
@@ -722,21 +739,27 @@ async function rpcUncached<T>(
     prompt: promptAiConsent,
     allow: (input) => rpc("aiConsent/allow", input, { requestContext: consentContext }),
   });
-  // Abort with an explicit reason so every consumer of the signal (the fetch, the bounded body
-  // read, and nested recovery calls that share this signal) reports the same cause.
+  // React Native's controller ignores abort(reason), so own the cause locally.
+  // The first abort wins, including when caller cancellation races the deadline.
   const controller = new AbortController();
-  const cancel = () => controller.abort(options.signal?.reason ?? new Error("Request canceled"));
+  let cancellationReason: unknown;
+  const abortRequest = (reason: unknown) => {
+    if (controller.signal.aborted) return;
+    cancellationReason = reason;
+    controller.abort(reason);
+  };
+  const cancel = () => abortRequest(options.signal?.reason ?? new Error(t("Request canceled")));
   if (options.signal?.aborted) cancel();
   else options.signal?.addEventListener("abort", cancel, { once: true });
   const timer =
     options.timeoutMs === null
       ? undefined
       : setTimeout(
-          () => controller.abort(new Error("Request timed out")),
+          () => abortRequest(new Error(t("Request timed out"))),
           options.timeoutMs ?? RPC_TIMEOUT_MS,
         );
   const abortReason = (error: unknown) =>
-    controller.signal.aborted ? (controller.signal.reason ?? error) : error;
+    controller.signal.aborted ? (cancellationReason ?? controller.signal.reason ?? error) : error;
   // Bind recovery to the Space + selection epoch this request was sent with:
   // a 401 arriving after the user switched Spaces — including A → B → A —
   // belongs to a stale request and must not touch the current selection.
@@ -758,7 +781,7 @@ async function rpcUncached<T>(
     } catch (error) {
       // The native fetch reports an aborted request with an implementation detail
       // ("FetchRequestCanceledException"); say what happened instead.
-      throw abortReason(error);
+      throw mobileTransportError(abortReason(error));
     }
     if (proc === "aiConsent/status" && res.status === 404) {
       cancelResponseBody(res);
@@ -769,7 +792,7 @@ async function rpcUncached<T>(
       MAX_MOBILE_RPC_RESPONSE_BYTES,
       controller.signal,
     ).catch((error: unknown) => {
-      throw abortReason(error);
+      throw mobileTransportError(abortReason(error));
     });
     if (!res.ok || parsed.error) {
       const message = parsed.error?.message ?? `rpc ${proc} failed`;
@@ -847,6 +870,10 @@ async function rpcUncached<T>(
       throw new MobileRpcError(message, res.status);
     }
     return parsed.json as T;
+  } catch (error) {
+    // A recovery RPC shares this signal; its reason-less native signal must
+    // still resolve to this request's original deadline or cancellation.
+    throw abortReason(error);
   } finally {
     if (timer) clearTimeout(timer);
     options.signal?.removeEventListener("abort", cancel);

@@ -166,6 +166,58 @@ it("opens just one specialist page and loads earlier entries only on request", a
   await act(async () => view.unmount());
 });
 
+it("mounts the inverted transcript with its first receipts rather than an empty footer anchor", async () => {
+  mock.params = { botId: "chief", peerBotId: "mail" };
+  let finish!: (page: PeerMessagePage) => void;
+  mock.rpc.mockImplementationOnce(
+    () =>
+      new Promise<PeerMessagePage>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const view = await mount();
+  expect(view.root.findAllByType("FlatList" as ElementType)).toHaveLength(0);
+  await act(async () => {
+    finish(detail(5));
+  });
+  const list = view.root.findByType("FlatList" as ElementType);
+  expect(list.props.inverted).toBe(true);
+  expect(list.props.data[0].seq).toBe(5);
+  expect(list.props.maintainVisibleContentPosition).toEqual({ minIndexForVisible: 0 });
+  await act(async () => view.unmount());
+});
+
+it("does not mount an empty anchored transcript after history is cleared", async () => {
+  mock.params = { botId: "chief", peerBotId: "mail" };
+  mock.rpc.mockResolvedValue({
+    threadId: "thread",
+    historyGeneration: 1,
+    messages: [],
+    olderCursor: null,
+  });
+  const view = await mount();
+  expect(view.root.findAllByType("FlatList" as ElementType)).toHaveLength(0);
+  expect(
+    view.root
+      .findAllByType("Text" as ElementType)
+      .some((node) => node.props.children === "No messages yet"),
+  ).toBe(true);
+  await act(async () => view.unmount());
+});
+
+it("shows readable inline Markdown in a summary from an older server", async () => {
+  const page = summary();
+  page.conversations[0]!.lastText = "**Found it.** [Read details](https://example.test/long-url)";
+  mock.rpc.mockResolvedValue(page);
+  const view = await mount();
+  expect(
+    view.root
+      .findAllByType("Text" as ElementType)
+      .some((node) => node.props.children === "Found it. Read details"),
+  ).toBe(true);
+  await act(async () => view.unmount());
+});
+
 it("keeps a visible detail page when loading older entries fails", async () => {
   mock.params = { botId: "chief", peerBotId: "mail" };
   mock.rpc.mockResolvedValueOnce(detail(5)).mockRejectedValueOnce(new Error("Offline"));

@@ -2,6 +2,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not load settings": "无法加载设置",
   Error: "错误",
   "Request canceled": "请求已取消",
+  "Request timed out": "请求超时",
 
   "Every minute": "每分钟",
   "Every day": "每天",

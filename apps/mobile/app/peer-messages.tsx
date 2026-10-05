@@ -1,5 +1,6 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { PeerConversationPage, PeerMessagePage } from "@rakazo/contracts";
+import { plainTextFromMarkdown } from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native";
@@ -119,7 +120,7 @@ function PeerList({ botId }: { botId: string }) {
               numberOfLines={2}
               style={{ color: c.mutedForeground, fontSize: 14, lineHeight: 20 }}
             >
-              {item.lastText.replace(/\s+/g, " ").trim()}
+              {plainTextFromMarkdown(item.lastText)}
             </Text>
           </Pressable>
         )}
@@ -200,58 +201,64 @@ function PeerDetail({
         error={resource.error}
         retry={() => void resource.reload()}
       />
-      <FlatList
-        inverted
-        data={messages}
-        refreshing={refreshing}
-        onRefresh={() => {
-          setRefreshing(true);
-          void resource.reload().finally(() => setRefreshing(false));
-        }}
-        keyExtractor={(message) => `${message.messageId}:${message.blockIndex}`}
-        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-        initialNumToRender={8}
-        maxToRenderPerBatch={6}
-        windowSize={7}
-        contentContainerStyle={{ padding: 20, paddingTop: Math.max(20, insets.bottom + 12) }}
-        ItemSeparatorComponent={() => <View style={{ height: 16 }} />}
-        renderItem={({ item }) => {
-          const sent = item.direction === "sent";
-          return (
-            <View style={{ alignSelf: sent ? "flex-end" : "flex-start", maxWidth: "94%", gap: 8 }}>
-              <Text style={{ color: c.mutedForeground, fontSize: 12 }}>
-                {`${sent ? t("Sent") : t("Received")} · ${new Date(item.createdAt).toLocaleString(dateLocaleForUi())}`}
-              </Text>
+      {messages.length ? (
+        <FlatList
+          key={`${resource.data?.threadId}:${resource.data?.historyGeneration}`}
+          inverted
+          data={messages}
+          refreshing={refreshing}
+          onRefresh={() => {
+            setRefreshing(true);
+            void resource.reload().finally(() => setRefreshing(false));
+          }}
+          keyExtractor={(message) => `${message.messageId}:${message.blockIndex}`}
+          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          initialNumToRender={8}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          contentContainerStyle={{ padding: 20, paddingTop: Math.max(20, insets.bottom + 12) }}
+          ItemSeparatorComponent={() => <View style={{ height: 16 }} />}
+          renderItem={({ item }) => {
+            const sent = item.direction === "sent";
+            return (
               <View
-                style={{
-                  paddingHorizontal: 14,
-                  paddingVertical: 10,
-                  borderRadius: 16,
-                  backgroundColor: sent ? c.accent : c.muted,
-                }}
+                style={{ alignSelf: sent ? "flex-end" : "flex-start", maxWidth: "94%", gap: 8 }}
               >
-                <ChatMarkdown>{item.text}</ChatMarkdown>
+                <Text style={{ color: c.mutedForeground, fontSize: 12 }}>
+                  {`${sent ? t("Sent") : t("Received")} · ${new Date(item.createdAt).toLocaleString(dateLocaleForUi())}`}
+                </Text>
+                <View
+                  style={{
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                    borderRadius: 16,
+                    backgroundColor: sent ? c.accent : c.muted,
+                  }}
+                >
+                  <ChatMarkdown>{item.text}</ChatMarkdown>
+                </View>
               </View>
+            );
+          }}
+          ListFooterComponent={
+            <View style={{ gap: 12, paddingBottom: 16 }}>
+              <LoadState error={moreError} retry={() => void loadMore()} />
+              {resource.data?.olderCursor ? (
+                <SettingsButton
+                  label={t("Load earlier messages")}
+                  disabled={loadingMore}
+                  onPress={() => void loadMore()}
+                />
+              ) : null}
+              {loadingMore ? (
+                <ActivityIndicator color={c.foreground} accessibilityLabel={t("Loading")} />
+              ) : null}
             </View>
-          );
-        }}
-        ListEmptyComponent={!resource.loading && !resource.error ? <EmptyState /> : null}
-        ListFooterComponent={
-          <View style={{ gap: 12, paddingBottom: 16 }}>
-            <LoadState error={moreError} retry={() => void loadMore()} />
-            {resource.data?.olderCursor ? (
-              <SettingsButton
-                label={t("Load earlier messages")}
-                disabled={loadingMore}
-                onPress={() => void loadMore()}
-              />
-            ) : null}
-            {loadingMore ? (
-              <ActivityIndicator color={c.foreground} accessibilityLabel={t("Loading")} />
-            ) : null}
-          </View>
-        }
-      />
+          }
+        />
+      ) : !resource.loading && !resource.error ? (
+        <EmptyState />
+      ) : null}
     </View>
   );
 }

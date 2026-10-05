@@ -2,6 +2,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not load settings": "Не удалось загрузить настройки",
   Error: "Ошибка",
   "Request canceled": "Запрос отменён",
+  "Request timed out": "Время ожидания запроса истекло",
 
   "Every minute": "Каждую минуту",
   "Every day": "Каждый день",
